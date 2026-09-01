@@ -10,3 +10,6 @@ dist/
 .env
 .env.local
 gltest.config.yaml
+
+# Local Netlify folder
+.netlify

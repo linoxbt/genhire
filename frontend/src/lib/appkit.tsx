@@ -29,9 +29,13 @@ const networks = [
   toCaipNetwork(NETWORKS.testnetAsimov.chain, NETWORKS.testnetAsimov.label),
 ] as [ReturnType<typeof toCaipNetwork>, ...ReturnType<typeof toCaipNetwork>[]]
 
-const wagmiAdapter = new WagmiAdapter({ networks, projectId: projectId ?? 'genhire-unset' })
+export const walletEnabled = Boolean(projectId)
 
-if (projectId) {
+const wagmiAdapter = walletEnabled
+  ? new WagmiAdapter({ networks, projectId: projectId as string })
+  : null
+
+if (wagmiAdapter && projectId) {
   createAppKit({
     adapters: [wagmiAdapter],
     networks,
@@ -51,13 +55,21 @@ if (projectId) {
   })
 }
 
-export const walletEnabled = Boolean(projectId)
-
 const queryClient = new QueryClient()
 
+/**
+ * Wraps the app in the wallet stack - but only when there is a wallet stack to
+ * wrap it in. With no project id, `createAppKit` above never ran, so mounting
+ * WagmiProvider around an adapter built from a placeholder id buys nothing and
+ * risks failing at render. Reads need none of this: the whole app browses fine
+ * without a wallet.
+ */
 export function WalletProviders({ children }: { children: ReactNode }) {
+  if (!walletEnabled) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  }
   return (
-    <WagmiProvider config={wagmiAdapter.wagmiConfig}>
+    <WagmiProvider config={wagmiAdapter!.wagmiConfig}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </WagmiProvider>
   )

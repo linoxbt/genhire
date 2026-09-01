@@ -556,7 +556,10 @@ VITE_REOWN_PROJECT_ID=""      # free from https://cloud.reown.com
 ```
 
 Without `VITE_REOWN_PROJECT_ID` the app runs **read-only**: the board, the document view and every
-figure on it still load from the chain; only wallet connection is disabled.
+figure on it still load from the chain; only wallet connection is disabled. That path is a real one,
+not an afterthought — `useWallet` swaps in a permanently-disconnected implementation at module load
+rather than branching inside the hook, because AppKit's hooks throw outright if `createAppKit` was
+never called, and the header renders a wallet button on every route.
 
 ### Driving the contract from Node
 
