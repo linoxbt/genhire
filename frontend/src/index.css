@@ -67,14 +67,19 @@ h1, h2, h3, h4 {
   @apply bg-seal-100 text-ink;
 }
 
-/* A small-caps mono label - the running head of every section of the document. */
-.label {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 500;
-  color: var(--color-ink-faint);
+/* A small-caps mono label - the running head of every section of the document.
+   Declared inside @layer components so a `text-*` utility can still recolour it:
+   Tailwind's utilities live in @layer utilities, and unlayered CSS beats any
+   layer, so an unlayered `color` here would silently win over every override. */
+@layer components {
+  .label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--color-ink-faint);
+  }
 }
 
 /* The sheet the document is printed on. */
@@ -84,14 +89,17 @@ h1, h2, h3, h4 {
   box-shadow: 0 1px 2px rgb(28 26 23 / 0.04), 0 12px 32px -18px rgb(28 26 23 / 0.22);
 }
 
-/* Numbered clause bodies, set as document prose. */
-.prose-doc {
-  font-family: var(--font-serif);
-  font-size: 1.0625rem;
-  line-height: 1.7;
-  color: var(--color-ink);
+/* Numbered clause bodies, set as document prose. Layered for the same reason
+   as .label - it sets a colour that a utility must be able to override. */
+@layer components {
+  .prose-doc {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    color: var(--color-ink);
+  }
+  .prose-doc p + p { margin-top: 0.85em; }
 }
-.prose-doc p + p { margin-top: 0.85em; }
 
 /* Redline diff, used for counter-offers and amendments. */
 .redline-add { @apply bg-signed-100 text-signed-700 no-underline; }
@@ -110,7 +118,92 @@ h1, h2, h3, h4 {
 }
 .rise { animation: rise 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+/* ------------------------------------------------------------------
+   Landing-page motion and data-visualisation system.
+   No animation library anywhere - every effect below is a keyframe or a
+   few lines of CSS, driven by small hooks in src/lib/.
+   ------------------------------------------------------------------ */
+
+/* Tabular figures. Every number on the site is a quantity that gets compared
+   to another number, so they all need to line up in their columns. */
+.tabnum { font-variant-numeric: tabular-nums; }
+
+/* The refunded share of a milestone, drawn as a hatch rather than a second
+   solid colour - it reads as "not filled" instead of as a rival value. */
+.hatch-corridor {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-rule-strong) 0,
+    var(--color-rule-strong) 1.5px,
+    transparent 1.5px,
+    transparent 7px
+  );
+  background-color: color-mix(in srgb, var(--color-rule) 30%, transparent);
+}
+
+/* The ruled percentage, marked with a trapezoid rather than a line so it
+   reads as a reading taken off the scale. */
+.wedge-marker { clip-path: polygon(30% 0, 70% 0, 100% 100%, 0 100%); }
+
+/* Blur-to-focus. The blur is what makes it feel like a considered reveal
+   rather than a fade. */
+@keyframes reveal-blur {
+  from { opacity: 0; filter: blur(8px); transform: translateY(12px); }
+  to   { opacity: 1; filter: blur(0);   transform: translateY(0); }
+}
+.animate-reveal { animation: reveal-blur 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-rise { animation: fade-rise 0.4s ease forwards; }
+
+@keyframes slow-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-slow-spin { animation: slow-spin 90s linear infinite; }
+
+/* Scroll-linked depth of field: a heading recedes as it leaves. Uses the
+   native scroll-driven timeline where it exists; useScrollDepth supplies a
+   feature-detected JS fallback where it does not. */
+@keyframes depth-blur {
+  /* Holds sharp for most of the range on purpose. Starting the ramp early
+     blurs a heading while it is still the thing being read. */
+  0%, 72% { filter: blur(0); }
+  100%    { filter: blur(9px); }
+}
+@supports (animation-timeline: view()) {
+  .scroll-depth-blur {
+    animation: depth-blur linear both;
+    animation-timeline: view();
+    animation-range: cover 0% cover 90%;
+  }
+}
+
+/* Outline type used as background texture. */
+.stroke-type {
+  color: transparent;
+  -webkit-text-stroke: 1px var(--color-rule-strong);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-seal-500);
+  outline-offset: 2px;
+}
+
+/* A blanket contract, not a per-animation opt-out. Note that the hooks in
+   src/lib/ write inline styles imperatively, which bypasses this entirely -
+   each one re-checks matchMedia itself. */
 @media (prefers-reduced-motion: reduce) {
-  .stamp, .rise { animation: none; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   html { scroll-behavior: auto; }
 }

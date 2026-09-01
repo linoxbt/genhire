@@ -1,113 +1,102 @@
-import { NavLink, Link, Outlet } from 'react-router-dom'
+import { Link, Outlet } from 'react-router-dom'
 import { NETWORKS, useNetwork, setCurrentNetwork, type NetworkKey, isDeployed } from '../lib/network'
+import { useHeaderTone } from '../lib/useHeaderTone'
 import { useWallet } from '../lib/wallet'
 import { shortAddress } from '../lib/format'
-import { Button } from './ui'
+import { Lockup } from './Logo'
+import NavMenu from './NavMenu'
+import Footer from './Footer'
 
-const NAV = [
-  { to: '/jobs', label: 'Board' },
-  { to: '/post', label: 'Post a brief' },
-  { to: '/dashboard', label: 'My engagements' },
-  { to: '/about', label: 'How it works' },
-]
-
-function NetworkSwitcher() {
+function NetworkSwitcher({ dark }: { dark: boolean }) {
   const network = useNetwork()
   return (
-    <div className="flex items-center rounded-sm border border-rule bg-leaf p-0.5">
-      {(Object.keys(NETWORKS) as NetworkKey[]).map((key) => (
-        <button
-          key={key}
-          onClick={() => setCurrentNetwork(key)}
-          title={isDeployed(key) ? NETWORKS[key].label : `${NETWORKS[key].label} — not deployed yet`}
-          className={`rounded-[2px] px-2.5 py-1 font-mono text-[0.6875rem] uppercase tracking-wider transition-colors ${
-            network === key ? 'bg-ink text-paper' : 'text-ink-faint hover:text-ink'
-          }`}
-        >
-          {NETWORKS[key].short}
-          {!isDeployed(key) && <span className="ml-1 opacity-60">·</span>}
-        </button>
-      ))}
+    <div
+      className={`hidden items-center rounded-full border p-0.5 sm:flex ${
+        dark ? 'border-paper/25' : 'border-rule'
+      }`}
+    >
+      {(Object.keys(NETWORKS) as NetworkKey[]).map((key) => {
+        const active = network === key
+        return (
+          <button
+            key={key}
+            onClick={() => setCurrentNetwork(key)}
+            title={isDeployed(key) ? NETWORKS[key].label : `${NETWORKS[key].label} — not deployed yet`}
+            className={`rounded-full px-2.5 py-1 font-mono text-[0.6875rem] tracking-wider uppercase transition-colors ${
+              active
+                ? dark
+                  ? 'bg-paper text-ink'
+                  : 'bg-ink text-paper'
+                : dark
+                  ? 'text-paper/50 hover:text-paper'
+                  : 'text-ink-faint hover:text-ink'
+            }`}
+          >
+            {NETWORKS[key].short}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function WalletButton() {
+function WalletButton({ dark }: { dark: boolean }) {
   const wallet = useWallet()
-  if (!wallet.enabled) {
-    return (
-      <span className="font-mono text-[0.6875rem] uppercase tracking-wider text-ink-faint" title="Set VITE_REOWN_PROJECT_ID to enable wallet connection">
-        read-only
-      </span>
-    )
-  }
+  if (!wallet.enabled) return null
   return (
-    <Button variant={wallet.isConnected ? 'outline' : 'primary'} onClick={wallet.connect} className="py-1.5">
-      {wallet.isConnected ? <span className="font-mono text-xs">{shortAddress(wallet.address)}</span> : 'Connect wallet'}
-    </Button>
+    <button
+      onClick={wallet.connect}
+      className={`shrink-0 rounded-full border px-3.5 py-1.5 font-mono text-[0.6875rem] tracking-wider uppercase transition-colors ${
+        dark ? 'border-paper/30 text-paper hover:border-paper' : 'border-rule-strong text-ink hover:border-ink'
+      }`}
+    >
+      {wallet.isConnected ? shortAddress(wallet.address) : 'Connect'}
+    </button>
   )
 }
 
+/**
+ * The app shell.
+ *
+ * There is no nav bar here at any breakpoint - every destination lives in the
+ * menu (see NavMenu), which keeps one canonical list rather than a header and a
+ * drawer that drift apart. The header floats transparently over any section
+ * marked `data-tone="dark"` and lays down a paper bar everywhere else.
+ */
 export default function Shell() {
+  const tone = useHeaderTone()
+  const dark = tone === 'dark'
   const network = useNetwork()
+
   return (
-    <div className="min-h-screen bg-paper">
-      <header className="sticky top-0 z-30 border-b border-rule bg-paper/92 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-5">
-          <Link to="/" className="flex items-baseline gap-2">
-            <span className="font-serif text-xl font-semibold tracking-tight text-ink">GenHire</span>
-            <span className="hidden font-mono text-[0.625rem] uppercase tracking-[0.18em] text-seal-500 sm:inline">
-              engagements
-            </span>
+    <div className="flex min-h-screen flex-col bg-paper">
+      <header
+        className={`inset-x-0 top-0 z-40 transition-colors duration-300 ${
+          dark ? 'fixed bg-transparent' : 'sticky bg-paper/95 backdrop-blur'
+        }`}
+      >
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+          <Link to="/" className="min-w-0">
+            <Lockup size={28} dark={dark} />
           </Link>
-
-          <nav className="hidden items-center gap-1 md:flex">
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `rounded-sm px-3 py-1.5 text-sm transition-colors ${
-                    isActive ? 'bg-vellum font-medium text-ink' : 'text-ink-soft hover:text-ink'
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
+          <nav className="flex shrink-0 items-center gap-3">
+            <NetworkSwitcher dark={dark} />
+            <WalletButton dark={dark} />
+            <NavMenu dark={dark} />
           </nav>
-
-          <div className="ml-auto flex items-center gap-3">
-            <NetworkSwitcher />
-            <WalletButton />
-          </div>
         </div>
-        {!isDeployed(network) && (
+        {!isDeployed(network) && !dark && (
           <div className="border-t border-seal-200 bg-seal-50 px-5 py-1.5 text-center text-xs text-seal-700">
             GenHire is not deployed on {NETWORKS[network].label} yet — switch networks to use the app.
           </div>
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-5 py-10">
+      <main className="flex-1">
         <Outlet />
       </main>
 
-      <footer className="mt-16 border-t border-rule">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-8 text-xs text-ink-faint sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            Every figure on this site is a live call to a GenLayer Intelligent Contract. There is no backend and no
-            database.
-          </p>
-          <nav className="flex gap-4 md:hidden">
-            {NAV.map((item) => (
-              <Link key={item.to} to={item.to} className="hover:text-ink">
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }

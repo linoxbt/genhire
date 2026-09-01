@@ -1,127 +1,146 @@
-import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getAllJobs } from '../lib/genhire'
 import { isDeployed } from '../lib/network'
 import { formatGen } from '../lib/format'
 import type { Job } from '../lib/types'
-import { Button, Label } from '../components/ui'
+import Splash from '../components/landing/Splash'
+import Hero from '../components/landing/Hero'
+import ClauseZero from '../components/landing/ClauseZero'
+import LifecycleRail from '../components/landing/LifecycleRail'
+import MechanicsShowcase from '../components/landing/MechanicsShowcase'
 
-function useStats() {
-  const [jobs, setJobs] = useState<Job[] | null>(null)
-  useEffect(() => {
-    if (!isDeployed()) return setJobs([])
-    getAllJobs().then(setJobs).catch(() => setJobs([]))
-  }, [])
-  if (!jobs) return null
-  const settled = jobs.flatMap((j) => j.milestones).filter((m) => m.status === 'settled')
-  const paid = settled.reduce((sum, m) => sum + BigInt(m.paid || '0'), 0n)
-  const escrowed = jobs.reduce((sum, j) => sum + BigInt(j.escrow || '0'), 0n)
-  const partial = settled.filter((m) => m.pct > 0 && m.pct < 100).length
-  return { jobs: jobs.length, paid, escrowed, partial, settled: settled.length }
+interface Stats {
+  jobs: number
+  escrowed: bigint
+  paid: bigint
+  settled: number
+  partial: number
 }
 
-export default function Landing() {
+/** `null` while loading, `false` once we know we could not read the chain. */
+function useStats(): Stats | null | false {
+  const [state, setState] = useState<Stats | null | false>(null)
+
+  useEffect(() => {
+    if (!isDeployed()) return setState(false)
+    let cancelled = false
+    getAllJobs()
+      .then((jobs: Job[]) => {
+        if (cancelled) return
+        const settled = jobs.flatMap((job) => job.milestones).filter((m) => m.status === 'settled')
+        setState({
+          jobs: jobs.length,
+          escrowed: jobs.reduce((sum, job) => sum + BigInt(job.escrow || '0'), 0n),
+          paid: settled.reduce((sum, m) => sum + BigInt(m.paid || '0'), 0n),
+          settled: settled.length,
+          partial: settled.filter((m) => m.pct > 0 && m.pct < 100).length,
+        })
+      })
+      .catch(() => !cancelled && setState(false))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return state
+}
+
+/**
+ * The live figures, or an honest statement that they could not be read.
+ *
+ * Never a zero and never a placeholder number: a fabricated figure on a page
+ * about verifiable settlement would undercut the entire argument.
+ */
+function StatBar() {
   const stats = useStats()
+
   return (
-    <div className="rise">
-      <section className="mx-auto max-w-3xl pt-6 pb-14 text-center">
-        <Label>An engagement marketplace on GenLayer</Label>
-        <h1 className="mt-5 font-serif text-5xl leading-[1.08] font-semibold tracking-tight text-ink sm:text-6xl">
-          The contract writes
-          <br />
-          <span className="italic text-seal-500">the contract.</span>
-        </h1>
-        <p className="mx-auto mt-6 max-w-xl text-[1.0625rem] leading-relaxed text-ink-soft">
-          A client posts a brief and funds it. A freelancer proposes terms. When both accept, the Intelligent Contract
-          drafts the binding Statement of Work itself — and every question after that is ruled on against the text it
-          wrote.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link to="/post">
-            <Button variant="seal">Post a brief</Button>
-          </Link>
-          <Link to="/jobs">
-            <Button variant="outline">Browse the board</Button>
-          </Link>
-        </div>
-      </section>
+    <section className="border-t border-rule bg-paper">
+      <div className="tabnum mx-auto flex max-w-6xl flex-wrap gap-x-8 gap-y-2 px-5 py-6 font-mono text-[0.75rem] text-ink-faint sm:px-8">
+        {stats === null && <span>reading the contract…</span>}
+        {stats === false && <span>live figures unavailable — the network is not answering right now</span>}
+        {stats && stats.jobs === 0 && <span>no engagements posted on this network yet</span>}
+        {stats && stats.jobs > 0 && (
+          <>
+            <span>{formatGen(stats.escrowed)} in escrow</span>
+            <span>·</span>
+            <span>{formatGen(stats.paid)} settled</span>
+            <span>·</span>
+            <span>
+              {stats.partial} of {stats.settled} settlements were partial
+            </span>
+            <span>·</span>
+            <span>
+              {stats.jobs} engagement{stats.jobs === 1 ? '' : 's'}
+            </span>
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
 
-      <section className="grid gap-px overflow-hidden rounded-sm border border-rule bg-rule sm:grid-cols-3">
-        {[
-          {
-            head: 'It drafts the terms',
-            body:
-              'Not a rubric one side typed and the other agreed to under protest. The contract turns the brief and the accepted proposal into specific, individually checkable acceptance criteria — then both parties sign that exact text before any work starts.',
-          },
-          {
-            head: 'It pays proportionally',
-            body:
-              'Real work lands partly done far more often than it lands cleanly failed. Adjudication returns a completion percentage with a per-criterion breakdown, and escrow splits on it. All-or-nothing is just the 100 or 0 case.',
-          },
-          {
-            head: 'It rules on scope',
-            body:
-              '“That was always included” against “that is new work” is the argument that ends engagements. Here it is a question with an on-chain answer: in scope, and it is owed; out of scope, and it needs a funded change order.',
-          },
-        ].map((card) => (
-          <article key={card.head} className="bg-leaf p-7">
-            <h2 className="font-serif text-xl font-semibold text-ink">{card.head}</h2>
-            <p className="mt-3 text-sm leading-relaxed text-ink-soft">{card.body}</p>
-          </article>
-        ))}
-      </section>
+/** Where money can move — the four places, stated plainly. */
+const SETTLEMENT_POINTS = [
+  'A milestone settles on its ruled percentage, once its appeal window closes undisputed.',
+  'A client withdraws a brief nobody was engaged on, and is refunded in full.',
+  'The deadline passes with work outstanding, and whatever is escrowed returns to the client.',
+  'A dispute resolves, and its bond goes to whichever party the re-adjudication proved right.',
+]
 
-      {stats && stats.jobs > 0 && (
-        <section className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-rule bg-rule sm:grid-cols-4">
-          {[
-            ['Engagements', String(stats.jobs)],
-            ['Held in escrow', formatGen(stats.escrowed)],
-            ['Settled to date', formatGen(stats.paid)],
-            ['Partial settlements', `${stats.partial} of ${stats.settled}`],
-          ].map(([label, value]) => (
-            <div key={label} className="bg-leaf px-5 py-6 text-center">
-              <div className="font-mono text-xl tabular-nums text-ink">{value}</div>
-              <Label className="mt-1.5">{label}</Label>
+export default function Landing() {
+  return (
+    <>
+      <Splash />
+      <Hero />
+      <ClauseZero />
+      <LifecycleRail />
+      <MechanicsShowcase />
+
+      <section className="border-t border-rule bg-paper">
+        <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24">
+          <div className="grid items-start gap-x-12 gap-y-8 lg:grid-cols-[1fr_1.4fr]">
+            <div>
+              <span className="label mb-2 block text-seal-500">Where money can move</span>
+              <h2 className="max-w-xs font-serif text-2xl font-semibold text-ink sm:text-3xl">
+                Four places, none of them a judging call.
+              </h2>
             </div>
-          ))}
-        </section>
-      )}
-
-      <section className="mt-14 grid gap-10 md:grid-cols-[1fr_1.1fr]">
-        <div>
-          <Label>The lifecycle</Label>
-          <h2 className="mt-3 font-serif text-3xl font-semibold text-ink">
-            Seven steps, none of them a middleman
-          </h2>
-          <p className="mt-4 text-sm leading-relaxed text-ink-soft">
-            No arbitrator, no escrow agent, no platform holding the money. GenLayer validators independently fetch the
-            delivered work and re-derive every judgment; the funds sit in the contract until the answer is in and its
-            appeal window has closed.
+            <ol className="grid gap-4 sm:grid-cols-2">
+              {SETTLEMENT_POINTS.map((point, index) => (
+                <li key={point} className="border border-rule p-4">
+                  <span className="label tabnum text-seal-500">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <p className="mt-2 text-[0.8125rem] leading-relaxed text-ink-soft">{point}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <p className="mt-8 max-w-2xl text-sm text-ink-faint">
+            A ruling never pays out on landing — it opens an appeal window first, so the losing side
+            still has a bonded way to contest it. Every terminal state is permissionlessly reachable,
+            so escrow can never be stranded by a counterparty who walks away.
           </p>
-          <Link to="/about" className="mt-5 inline-block text-sm text-seal-600 underline underline-offset-4">
-            How adjudication actually works →
+        </div>
+      </section>
+
+      <StatBar />
+
+      <section className="border-t border-rule bg-paper">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-5 py-14 sm:px-8 sm:py-20">
+          <h2 className="max-w-md font-serif text-2xl font-semibold text-ink sm:text-3xl">
+            Write the brief. The contract will write the agreement.
+          </h2>
+          <Link
+            to="/post"
+            className="shrink-0 rounded-sm bg-seal-500 px-5 py-3 font-mono text-xs tracking-wider text-white uppercase transition-colors hover:bg-seal-600"
+          >
+            Post a brief →
           </Link>
         </div>
-        <ol className="space-y-0">
-          {[
-            ['Post', 'The client writes a brief, splits it into milestones and funds the lot up front.'],
-            ['Negotiate', 'Freelancers propose; either side counters. The unspent budget refunds on acceptance.'],
-            ['Draft', 'The contract writes the Statement of Work — scope, assumptions, exclusions, criteria.'],
-            ['Sign', 'Both parties sign that exact text by its hash. Work cannot start until they have.'],
-            ['Deliver', 'The freelancer submits evidence for a milestone, in order.'],
-            ['Adjudicate', 'Validators fetch it, judge each criterion, and return a completion percentage.'],
-            ['Settle', 'After the appeal window, anyone can settle. Escrow splits on the percentage.'],
-          ].map(([head, body], index) => (
-            <li key={head} className="grid grid-cols-[2rem_1fr] gap-x-3 border-t border-rule py-3.5 first:border-t-0">
-              <span className="pt-0.5 font-mono text-xs text-ink-faint tabular-nums">{index + 1}.</span>
-              <div>
-                <span className="font-serif text-base font-semibold text-ink">{head}</span>
-                <span className="text-sm text-ink-soft"> — {body}</span>
-              </div>
-            </li>
-          ))}
-        </ol>
       </section>
-    </div>
+    </>
   )
 }

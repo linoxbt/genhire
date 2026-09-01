@@ -42,15 +42,23 @@ const MILESTONE_WORDS: Record<MilestoneStatus, string> = {
 export const milestoneWord = (status: MilestoneStatus) => MILESTONE_WORDS[status]
 
 /** The completion percentage, drawn as a filled measure rather than a number
- *  alone - the whole point is that it is a proportion, not a verdict. */
+ *  alone - the whole point is that it is a proportion, not a verdict.
+ *
+ *  The remainder is hatched rather than left blank or filled in a second
+ *  colour: hatching reads as "the part that was not earned" (and went back to
+ *  the client), where a second solid colour would read as a rival quantity. */
 export function CompletionBar({ pct, settled = false }: { pct: number; settled?: boolean }) {
   const tone = pct >= 90 ? 'bg-signed-500' : pct >= 40 ? 'bg-amber-500' : 'bg-seal-500'
   return (
     <div className="flex items-center gap-3">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-vellum">
-        <div className={`h-full rounded-full transition-[width] duration-700 ${tone}`} style={{ width: `${pct}%` }} />
+      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-vellum">
+        <div className="hatch-corridor absolute inset-y-0 right-0" style={{ left: `${pct}%` }} />
+        <div
+          className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ${tone}`}
+          style={{ width: `${pct}%` }}
+        />
       </div>
-      <Mono className={`tabular-nums ${settled ? 'text-ink' : 'text-ink-soft'}`}>{pct}%</Mono>
+      <Mono className={`tabnum ${settled ? 'text-ink' : 'text-ink-soft'}`}>{pct}%</Mono>
     </div>
   )
 }

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" width="200" height="48">
+  <circle cx="24" cy="24" r="19" fill="none" stroke="#1c1a17" stroke-width="2.4"/>
+  <circle cx="24" cy="24" r="15.6" fill="none" stroke="#1c1a17" stroke-width="1" opacity="0.4"/>
+  <path d="M31.0 11.876 A14 14 0 1 0 31.0 36.124 Z" fill="#1c1a17"/>
+  <path d="M32.2 12.653 A14 14 0 0 1 32.2 35.347 Z" fill="#c2482a"/>
+  <text x="54" y="32" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="26" font-weight="600" letter-spacing="-0.5" fill="#1c1a17">GenHire</text>
+</svg>
