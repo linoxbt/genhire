@@ -6,6 +6,8 @@
 
 Built on [GenLayer](https://genlayer.com) Intelligent Contracts · live on Studio Network
 
+**[genhire.netlify.app](https://genhire.netlify.app)**
+
 [What it is](#what-it-is) · [Why GenLayer](#why-this-needs-genlayer) · [Lifecycle](#lifecycle) ·
 [Contract reference](#contract-reference) · [Testing](#testing) · [Running it](#running-it)
 
@@ -62,8 +64,9 @@ breakdown, and escrow splits on it.
 
 | | |
 |---|---|
+| **Live app** | [genhire.netlify.app](https://genhire.netlify.app) |
 | **Contract** | [`contracts/genhire.py`](contracts/genhire.py) — Python / GenVM. One contract, 24 methods, no backend |
-| **Live** | GenLayer Studio Network — see [Networks](#networks) |
+| **Network** | GenLayer Studio Network — see [Networks](#networks) |
 | **Frontend** | Vite + React 19 + TypeScript + Tailwind v4, a static SPA |
 | **Chain access** | [`genlayer-js`](https://github.com/genlayerlabs/genlayer-js) — no server, no indexer, no database, no mock data |
 | **Tests** | 297 across three suites, plus `genvm-lint` |
@@ -581,9 +584,27 @@ genlayer call <address> get_appeal_window_seconds                # and check the
 
 Then set the address in `frontend/.env.local` and in the [Networks](#networks) table.
 
-`netlify.toml` is included — base `frontend`, publish `dist`, with an SPA redirect so `/job/3` does
-not 404 on a direct load or refresh. Set `VITE_CONTRACT_ADDRESS_*` and `VITE_REOWN_PROJECT_ID` in the
-host's environment variables.
+### Frontend
+
+The app is deployed at **[genhire.netlify.app](https://genhire.netlify.app)**.
+
+[`netlify.toml`](netlify.toml) drives the build: base `frontend`, publish `dist`, Node 22, an SPA
+redirect so `/job/3` does not 404 on a direct load or refresh, immutable caching on Vite's
+fingerprinted `/assets/*` with `must-revalidate` on the HTML entry, and a small set of security
+headers (`nosniff`, `DENY` framing, a strict referrer policy) — a page that connects a wallet is
+worth making un-frameable.
+
+The contract address and Reown project id are **site environment variables**, not committed:
+
+```bash
+netlify env:set VITE_CONTRACT_ADDRESS_STUDIONET 0x…
+netlify env:set VITE_REOWN_PROJECT_ID <id from cloud.reown.com>
+netlify deploy --prod
+```
+
+Without `VITE_REOWN_PROJECT_ID` the deployed app is **read-only** — every page and every figure
+loads from the chain, but wallet connection is disabled, so no engagement can be posted or signed
+from it.
 
 ---
 
