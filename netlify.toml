@@ -1,0 +1,13 @@
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Client-side routes like /job/3 must not 404 on a direct load or a refresh.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

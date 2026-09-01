@@ -1,0 +1,13 @@
+# Copy to gltest.config.yaml (gitignored) and supply a funded key to run
+# tests/integration. Studionet is gasless but still rate-limited: ~30 requests
+# a minute and 5000 a day, shared.
+networks:
+  studionet:
+    accounts:
+      - "${GENHIRE_DEPLOYER_KEY}"
+      - "${GENHIRE_FREELANCER_KEY}"
+    from: ${GENHIRE_DEPLOYER_KEY}
+environment: .env
+paths:
+  contracts: contracts
+  artifacts: artifacts
