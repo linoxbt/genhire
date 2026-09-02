@@ -4,7 +4,7 @@
  * The contract re-fetches every evidence URL on each adjudication, including
  * the re-adjudication that answers a dispute. Without a commitment, whoever
  * controls the page could change what is judged between a ruling and its
- * appeal — so a sha256 taken now is what makes the appeal judge the same bytes.
+ * appeal, so a sha256 taken now is what makes the appeal judge the same bytes.
  */
 
 /** ipfs:// and ar:// references are already hashes of their content. */
@@ -32,7 +32,7 @@ export interface EvidenceCommitment {
  *
  * Best-effort by nature: the browser may be blocked by CORS where the
  * validators are not, so anything unreachable is reported rather than guessed
- * at — submitting a wrong hash would make the contract refuse the evidence at
+ * at, because submitting a wrong hash would make the contract refuse the evidence at
  * adjudication, which is worse than being told to supply it manually.
  */
 export async function commitEvidence(urls: string[]): Promise<EvidenceCommitment> {

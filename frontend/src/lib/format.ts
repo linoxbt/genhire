@@ -4,7 +4,7 @@ export const shortAddress = (address?: string): string =>
   !address ? '' : `${address.slice(0, 6)}…${address.slice(-4)}`
 
 /**
- * Wei to a readable GEN figure. **Lossy — display only.**
+ * Wei to a readable GEN figure. **Lossy: display only.**
  *
  * It truncates to six decimals, so it must never be used to seed an editable
  * amount: round-tripping display → `toWei` silently rewrites the number. That
@@ -35,7 +35,7 @@ export const sameAddress = (a?: string, b?: string): boolean =>
   Boolean(a && b && a.toLowerCase() === b.toLowerCase())
 
 export function formatDate(unixSeconds: number): string {
-  if (!unixSeconds) return '—'
+  if (!unixSeconds) return 'not set'
   return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -44,7 +44,7 @@ export function formatDate(unixSeconds: number): string {
 }
 
 export function formatDateTime(unixSeconds: number): string {
-  if (!unixSeconds) return '—'
+  if (!unixSeconds) return 'not set'
   return new Date(unixSeconds * 1000).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -55,7 +55,7 @@ export function formatDateTime(unixSeconds: number): string {
 
 /** "in 3 days" / "2 hours ago" - relative to now, for deadlines and windows. */
 export function relativeTime(unixSeconds: number): string {
-  if (!unixSeconds) return '—'
+  if (!unixSeconds) return 'not set'
   const deltaSeconds = unixSeconds - Math.floor(Date.now() / 1000)
   const past = deltaSeconds < 0
   let remaining = Math.abs(deltaSeconds)
@@ -73,7 +73,7 @@ export function relativeTime(unixSeconds: number): string {
     }
     remaining %= size
   }
-  return '—'
+  return 'not set'
 }
 
 /** A rough word-level redline between two texts, for counter-offers. */

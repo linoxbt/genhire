@@ -42,7 +42,7 @@ export default function Dashboard() {
     return (
       <EmptyState
         title="Connect a wallet"
-        body="Your engagements are looked up by address — there is no account to sign in to."
+        body="Your engagements are looked up by address. There is no account to sign in to."
         action={
           <Button onClick={wallet.connect} disabled={!wallet.enabled}>
             {wallet.enabled ? 'Connect wallet' : 'Wallet connection is not configured'}
@@ -57,7 +57,7 @@ export default function Dashboard() {
       <Callout tone="seal">
         <strong className="font-medium">Couldn’t read your engagements.</strong>
         <p className="mt-0.5">
-          The network didn’t answer. This says nothing about what you have on chain — reload to try
+          The network didn’t answer. This says nothing about what you have on chain. Reload to try
           again.
         </p>
       </Callout>

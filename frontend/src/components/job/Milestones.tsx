@@ -136,7 +136,7 @@ function MilestoneCard({
 
       {milestone.criteria.length > 0 && (
         <div className="mt-4 ml-6">
-          <Label className="mb-2">Acceptance criteria — drafted by the contract</Label>
+          <Label className="mb-2">Acceptance criteria, drafted by the contract</Label>
           <ul className="space-y-1.5">
             {milestone.criteria.map((criterion, criterionIndex) => {
               const result = milestone.criteria_result?.[criterionIndex]
@@ -184,7 +184,7 @@ function MilestoneCard({
       {(milestone.status === 'ruled' || milestone.status === 'settled') && (
         <div className="mt-4 ml-6 border-t border-rule pt-4">
           <Label className="mb-2">
-            Ruling{milestone.rounds > 1 ? ` — round ${milestone.rounds} of ${maxRounds}` : ''}
+            Ruling{milestone.rounds > 1 ? `, round ${milestone.rounds} of ${maxRounds}` : ''}
           </Label>
           <CompletionBar pct={milestone.pct} settled={milestone.status === 'settled'} />
           <p className="mt-3 font-serif text-[0.9375rem] leading-relaxed text-ink">{milestone.reasoning}</p>
@@ -207,7 +207,7 @@ function MilestoneCard({
           <Callout tone="seal">
             <strong className="font-medium">Contested.</strong> {formatGen(job.dispute_bond)} is bonded against this
             ruling; the next adjudication decides the bond too. If the percentage moves, the bond returns to the
-            disputer — if it stands, it goes to the other party.
+            disputer. If it stands, it goes to the other party.
           </Callout>
         </div>
       )}
@@ -229,11 +229,11 @@ function MilestoneCard({
           )}
           {milestone.status === 'ruled' && !disputeOpen && windowClosed && (
             <Button variant="seal" onClick={() => actions.onSettle(index)} busy={busy}>
-              Settle — split {milestone.pct}/{100 - milestone.pct}
+              Settle: split {milestone.pct}/{100 - milestone.pct}
             </Button>
           )}
           {!isParty && (milestone.status === 'submitted' || (milestone.status === 'ruled' && windowClosed)) && (
-            <span className="text-xs text-ink-faint">Anyone can do this — it cannot be withheld.</span>
+            <span className="text-xs text-ink-faint">Anyone can do this. It cannot be withheld.</span>
           )}
 
           {milestone.status === 'ruled' && !disputeOpen && !windowClosed && milestone.rounds < maxRounds && isParty && (

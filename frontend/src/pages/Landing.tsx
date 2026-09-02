@@ -67,7 +67,7 @@ function StatBar() {
     <section className="border-t border-rule bg-paper">
       <div className="tabnum mx-auto flex max-w-6xl flex-wrap gap-x-8 gap-y-2 px-5 py-6 font-mono text-[0.75rem] text-ink-faint sm:px-8">
         {stats === null && <span>reading the contract…</span>}
-        {stats === false && <span>live figures unavailable — the network is not answering right now</span>}
+        {stats === false && <span>live figures unavailable, the network is not answering right now</span>}
         {stats && stats.jobs === 0 && <span>no engagements posted on this network yet</span>}
         {stats && stats.jobs > 0 && (
           <>
@@ -89,7 +89,7 @@ function StatBar() {
   )
 }
 
-/** Where money can move — the four places, stated plainly. */
+/** Where money can move: the four places, stated plainly. */
 const SETTLEMENT_POINTS = [
   'A milestone settles on its ruled percentage, once its appeal window closes undisputed.',
   'A client withdraws a brief nobody was engaged on, and is refunded in full.',
@@ -127,7 +127,7 @@ export default function Landing() {
             </ol>
           </div>
           <p className="mt-8 max-w-2xl text-sm text-ink-faint">
-            A ruling never pays out on landing — it opens an appeal window first, so the losing side
+            A ruling never pays out on landing. It opens an appeal window first, so the losing side
             still has a bonded way to contest it. Every terminal state is permissionlessly reachable,
             so escrow can never be stranded by a counterparty who walks away.
           </p>

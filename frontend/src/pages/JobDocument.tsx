@@ -49,7 +49,7 @@ export default function JobDocument() {
     async (token: { cancelled: boolean } = loadToken.current) => {
       // Wrapped in retryRead because a node can lag a moment behind a write it
       // just finalized: without it the page could re-render pre-transaction
-      // state directly beside "Done — recorded on chain".
+      // state directly beside the success notice.
       const [nextJob, nextProposals, nextRulings, nextSow, window, rounds] = await Promise.all([
         retryRead(() => api.getJob(jobId)),
         retryRead(() => api.getProposals(jobId)),
@@ -243,7 +243,7 @@ export default function JobDocument() {
             onDraft={() =>
               act(
                 (c) => api.draftSow(c, job.id),
-                'The contract is drafting the agreement — validators are writing and checking the criteria. This takes a few minutes.',
+                'The contract is drafting the agreement. Validators are writing and checking the criteria. This takes a few minutes.',
               )
             }
             onSign={() => act((c) => api.signSow(c, job.id, job.sow_hash), 'Recording your signature…')}
@@ -388,7 +388,7 @@ function ClosingActions({
             Return the escrow
           </Button>
           <p className="text-xs text-ink-faint">
-            The deadline has passed. Anyone can call this — the escrow returns to the client.
+            The deadline has passed. Anyone can call this. The escrow returns to the client.
           </p>
         </>
       )}
@@ -434,7 +434,7 @@ function ProposeForm({
         onChange={(e) => setApproach(e.target.value)}
         placeholder="How you'd tackle it, and anything the brief left open."
       />
-      <Label>Your milestone split — at or below the posted budget</Label>
+      <Label>Your milestone split, at or below the posted budget</Label>
       <div className="space-y-2">
         {rows.map((row, index) => (
           <div key={index} className="flex items-center gap-2">

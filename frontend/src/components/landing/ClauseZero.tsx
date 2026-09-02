@@ -8,7 +8,7 @@ import MeasureBar from './MeasureBar'
  * and settles on how many of them were met.
  *
  * Desktop and mobile are two separate DOM compositions rather than one reflowing
- * layout — the desktop version is art-directed with absolute positioning and
+ * layout. The desktop version is art-directed with absolute positioning and
  * clamped gutters, which does not survive being squeezed into a phone.
  */
 const CRITERIA = [

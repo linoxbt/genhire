@@ -4,7 +4,7 @@ import SealGauge from './SealGauge'
 
 /**
  * The three mechanics, each with the mark drawn as data behind it. The gauge
- * percentage is illustrative of the mechanic, not a live reading — these are
+ * percentage is illustrative of the mechanic, not a live reading. These are
  * arguments, not measurements.
  */
 /**
@@ -27,7 +27,7 @@ const MECHANICS: { label: string; pct?: number; blurb: string }[] = [
   {
     label: 'Scope, decided',
     blurb:
-      '“That was always included” against “that is new work” ends more engagements than bad delivery does. Because the signed agreement is on chain, it is a question with an answer — and out-of-scope work needs a funded change order.',
+      '“That was always included” against “that is new work” ends more engagements than bad delivery does. Because the signed agreement is on chain, it is a question with an answer, and out-of-scope work needs a funded change order.',
   },
 ]
 
@@ -45,7 +45,7 @@ export default function MechanicsShowcase() {
 
       <div ref={wrapperRef} className="relative" style={{ height: `${MECHANICS.length * 100}vh` }}>
         <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden">
-          {/* Outline type as texture — this page's substitute for a grid or
+          {/* Outline type as texture, this page's substitute for a grid or
               noise overlay. */}
           <div
             aria-hidden="true"

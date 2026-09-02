@@ -45,5 +45,5 @@ export default function TxNotice({ state, onDismiss }: { state: TxState; onDismi
     )
   }
 
-  return <Callout tone="signed">Done — recorded on chain.</Callout>
+  return <Callout tone="signed">Done. Recorded on chain.</Callout>
 }

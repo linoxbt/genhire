@@ -1,5 +1,5 @@
 /**
- * The GenHire mark — a seal impression cut into two unequal parts.
+ * The GenHire mark: a seal impression cut into two unequal parts.
  *
  * The cut is the whole idea. GenHire settles a milestone on a completion
  * percentage rather than a verdict, so the mark is a seal (an executed
@@ -10,12 +10,12 @@
  *
  * Geometry is fixed on a 48-unit viewBox: rim at r=19, the split disc at r=14,
  * cut at 70% across. The two segments are drawn against slightly different
- * chords (31.0 and 32.2) so a hairline of paper shows between them — that gap
+ * chords (31.0 and 32.2) so a hairline of paper shows between them, and that gap
  * is what makes it read as a *cut* rather than a pie slice.
  */
 
 // Below this size the impressed inner rim stops resolving and merges with the
-// outer rim into a single grey band, so it is dropped — an optical size, not a
+// outer rim into a single grey band, so it is dropped. An optical size, not a
 // scaled-down copy.
 const RIM_MIN_SIZE = 28
 
@@ -23,7 +23,7 @@ interface SealProps {
   size?: number
   /** Ink for the major segment and rim. */
   ink?: string
-  /** The minor segment — the refunded share. */
+  /** The minor segment, the refunded share. */
   accent?: string
   className?: string
 }
@@ -53,7 +53,7 @@ export function Seal({ size = 32, className }: SealProps) {
   return <SealShape size={size} ink="#1c1a17" accent="#c2482a" className={className} />
 }
 
-/** The mark on ink — used in the menu overlay, the hero and the footer. */
+/** The mark on ink, used in the menu overlay, the hero and the footer. */
 export function DarkSeal({ size = 32, className }: SealProps) {
   return <SealShape size={size} ink="#faf8f4" accent="#d9694c" className={className} />
 }

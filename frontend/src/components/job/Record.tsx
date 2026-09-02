@@ -59,8 +59,8 @@ export default function Record({
                 <p className="mt-2 text-sm text-ink-soft">{ruling.reasoning}</p>
                 <p className="mt-2 text-xs text-ink-faint">
                   {ruling.ruling === 'IN_SCOPE'
-                    ? 'Already covered by the signed agreement — owed at the agreed price.'
-                    : 'Not covered — new work needs a funded change order.'}
+                    ? 'Already covered by the signed agreement, so it is owed at the agreed price.'
+                    : 'Not covered, so this needs a funded change order.'}
                 </p>
               </>
             )}
@@ -68,7 +68,7 @@ export default function Record({
             {ruling.kind === 'change_order' && (
               <>
                 <header className="mb-2 flex flex-wrap items-center gap-x-3">
-                  <Label>Amendment — supersedes v{ruling.sow_version}</Label>
+                  <Label>Amendment, supersedes v{ruling.sow_version}</Label>
                   <span className="ml-auto font-mono text-[0.8125rem] tabular-nums text-ink">
                     + {formatGen(ruling.added)}
                   </span>
@@ -89,7 +89,7 @@ export default function Record({
             {ruling.kind === 'dispute' && (
               <>
                 <header className="mb-2 flex flex-wrap items-center gap-x-3">
-                  <Label>Dispute — milestone {ruling.milestone + 1}</Label>
+                  <Label>Dispute on milestone {ruling.milestone + 1}</Label>
                   <span className="ml-auto font-mono text-[0.6875rem] text-ink-faint">
                     {shortAddress(ruling.by)} bonded {formatGen(ruling.bond)} · {formatDateTime(ruling.at)}
                   </span>

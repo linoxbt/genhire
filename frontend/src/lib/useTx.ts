@@ -51,13 +51,13 @@ export function useTx() {
         setState({
           phase: 'failed',
           hash,
-          message: `The validators reached no verdict (${outcome.status}). Nothing was changed — you can try again.`,
+          message: `The validators reached no verdict (${outcome.status}). Nothing was changed, so you can try again.`,
         })
       } else {
         setState({
           phase: 'failed',
           hash,
-          message: 'Still unresolved after ten minutes. The transaction may yet land — reload before retrying.',
+          message: 'Still unresolved after ten minutes. The transaction may yet land, so reload before retrying.',
         })
       }
     },

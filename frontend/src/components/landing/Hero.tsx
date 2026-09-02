@@ -53,7 +53,7 @@ export default function Hero() {
           style={{ transitionDelay: '350ms' }}
         >
           A client posts a brief and funds it. A freelancer proposes terms. When both accept, the
-          Intelligent Contract drafts the binding Statement of Work itself — and every question after
+          Intelligent Contract drafts the binding Statement of Work itself, and every question after
           that is ruled on against the text it wrote.
         </p>
 

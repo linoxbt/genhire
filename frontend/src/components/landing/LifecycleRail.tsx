@@ -19,7 +19,7 @@ const STEPS = [
   {
     verb: 'Draft',
     method: 'draft_sow',
-    body: 'The contract writes the Statement of Work — scope, assumptions, exclusions, and one list of checkable acceptance criteria per milestone. Permissionless, so neither side can stall it.',
+    body: 'The contract writes the Statement of Work: scope, assumptions, exclusions, and one list of checkable acceptance criteria per milestone. Permissionless, so neither side can stall it.',
   },
   {
     verb: 'Sign',

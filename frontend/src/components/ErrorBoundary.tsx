@@ -33,7 +33,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
         <div className="rounded-sm border border-seal-200 bg-seal-50 px-6 py-6">
           <h1 className="font-serif text-2xl font-semibold text-ink">Something broke on this page</h1>
           <p className="mt-2 text-sm text-seal-700">
-            This is a fault in the app, not in the contract — nothing on chain has changed.
+            This is a fault in the app, not in the contract. Nothing on chain has changed.
           </p>
           <pre className="mt-4 overflow-x-auto rounded-sm border border-seal-200 bg-white/60 p-3 font-mono text-[0.6875rem] text-ink-soft">
             {error.message}

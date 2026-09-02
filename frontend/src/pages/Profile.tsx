@@ -42,7 +42,7 @@ export default function Profile() {
       <Callout tone="seal">
         <strong className="font-medium">Couldn’t read this address’s record.</strong>
         <p className="mt-0.5">
-          The network didn’t answer. An unread record is not an empty one — reload to try again.
+          The network didn’t answer. An unread record is not an empty one. Reload to try again.
         </p>
       </Callout>
     )
@@ -82,7 +82,7 @@ export default function Profile() {
           {[
             ['Milestones delivered', String(settled.length)],
             ['Delivered in full', `${clean} of ${settled.length}`],
-            ['Average completion', averagePct === null ? '—' : `${averagePct}%`],
+            ['Average completion', averagePct === null ? 'n/a' : `${averagePct}%`],
             ['Earned', formatGen(earned)],
           ].map(([label, value]) => (
             <div key={label} className="bg-leaf px-4 py-5 text-center">

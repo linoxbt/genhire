@@ -22,7 +22,7 @@ function NetworkSwitcher({ dark }: { dark: boolean }) {
   if (keys.length < 2) {
     return (
       <span
-        title={isDeployed(network) ? NETWORKS[network].label : `${NETWORKS[network].label} — not deployed yet`}
+        title={isDeployed(network) ? NETWORKS[network].label : `${NETWORKS[network].label} (not deployed yet)`}
         className={`hidden rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] tracking-wider uppercase sm:inline-block ${
           dark ? 'border-paper/25 text-paper/60' : 'border-rule text-ink-faint'
         }`}
@@ -44,7 +44,7 @@ function NetworkSwitcher({ dark }: { dark: boolean }) {
           <button
             key={key}
             onClick={() => setCurrentNetwork(key)}
-            title={isDeployed(key) ? NETWORKS[key].label : `${NETWORKS[key].label} — not deployed yet`}
+            title={isDeployed(key) ? NETWORKS[key].label : `${NETWORKS[key].label} (not deployed yet)`}
             className={`rounded-full px-2.5 py-1 font-mono text-[0.6875rem] tracking-wider uppercase transition-colors ${
               active
                 ? dark
@@ -127,7 +127,7 @@ export default function Shell() {
               dark ? 'border-paper/15 bg-ink/80 text-seal-400 backdrop-blur' : 'border-seal-200 bg-seal-50 text-seal-700'
             }`}
           >
-            GenHire is not deployed on {NETWORKS[network].label} yet — switch networks to use the app.
+            GenHire is not deployed on {NETWORKS[network].label} yet. Switch networks to use the app.
           </div>
         )}
       </header>

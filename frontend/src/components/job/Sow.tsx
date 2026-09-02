@@ -41,7 +41,7 @@ export default function Sow({
   if (!sow) {
     return (
       <Callout tone="seal">
-        The Statement of Work could not be read from the contract just now. Reload to try again — the
+        The Statement of Work could not be read from the contract just now. Reload to try again. The
         agreement itself is unaffected.
       </Callout>
     )
@@ -51,11 +51,11 @@ export default function Sow({
     return (
       <div className="space-y-4">
         <Callout tone="amber">
-          Terms are agreed. The contract has yet to draft the Statement of Work — validators will write the acceptance
+          Terms are agreed. The contract has yet to draft the Statement of Work. Validators will write the acceptance
           criteria from the brief and the accepted proposal, and both parties sign that text before work can start.
         </Callout>
         <div className="flex items-center justify-between">
-          <p className="text-xs text-ink-faint">Anyone can trigger drafting — neither side can stall it.</p>
+          <p className="text-xs text-ink-faint">Anyone can trigger drafting, so neither side can stall it.</p>
           <Button variant="seal" onClick={onDraft} busy={busy}>
             Draft the agreement
           </Button>
@@ -67,7 +67,7 @@ export default function Sow({
   return (
     <div>
       {job.sow_version > 1 && (
-        <Label className="mb-3">Amendment {job.sow_version - 1} — supersedes version {job.sow_version - 1}</Label>
+        <Label className="mb-3">Amendment {job.sow_version - 1}, supersedes version {job.sow_version - 1}</Label>
       )}
 
       <div className="prose-doc">

@@ -67,7 +67,7 @@ export default function PostBrief() {
         <Label>New engagement</Label>
         <h1 className="mt-2 font-serif text-3xl font-semibold text-ink">Post a brief</h1>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-soft">
-          Write it the way you'd explain it to a person. You are not writing acceptance criteria — the contract drafts
+          Write it the way you'd explain it to a person. You are not writing acceptance criteria. The contract drafts
           those once a proposal is accepted, and you'll sign them before any work starts.
         </p>
       </header>
@@ -90,7 +90,7 @@ export default function PostBrief() {
           <div>
             <Label className="mb-2">Milestones</Label>
             <p className="mb-3 text-xs text-ink-faint">
-              Your opening split. A freelancer may propose a different one, and the whole amount is escrowed now —
+              Your opening split. A freelancer may propose a different one, and the whole amount is escrowed now, and
               whatever the accepted price doesn't use is refunded to you the moment you accept.
             </p>
             <div className="space-y-2">
@@ -133,7 +133,7 @@ export default function PostBrief() {
               <div className="text-right">
                 <Label>To escrow now</Label>
                 <div className="font-mono text-lg tabular-nums text-ink">
-                  {total === null ? '—' : formatGen(total)}
+                  {total === null ? 'invalid' : formatGen(total)}
                 </div>
               </div>
             </div>
