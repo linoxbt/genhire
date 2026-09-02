@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { Job, Proposal } from '../../lib/types'
-import { formatGen, redline, sameAddress, shortAddress, toWei, formatDateTime } from '../../lib/format'
+import { formatGen, redline, sameAddress, shortAddress, toWei, weiToInput, formatDateTime } from '../../lib/format'
 import { Button, Field, Input, Label, Textarea } from '../ui'
+import { LIMITS, scheduleProblems } from '../../lib/limits'
 
 /** A counter-offer only means something next to what it changed, so the
  *  approach text is shown as a redline against its parent rather than as a
@@ -133,7 +134,10 @@ function CounterForm({
 }) {
   const [approach, setApproach] = useState(base.approach)
   const [rows, setRows] = useState(
-    base.milestones.map((m) => ({ title: m.title, gen: formatGen(m.amount, { suffix: false }) })),
+    // Seeded from the exact wei, not the display figure: formatGen truncates,
+    // so seeding from it would silently rewrite the price of a counter the user
+    // never edited.
+    base.milestones.map((m) => ({ title: m.title, gen: weiToInput(m.amount) })),
   )
 
   let total: bigint | null = null
@@ -143,10 +147,15 @@ function CounterForm({
     total = null
   }
 
+  const problems = [
+    ...(approach.trim() ? [] : ['A counter needs an approach.']),
+    ...scheduleProblems(rows, toWei),
+  ]
+
   return (
     <div className="mt-4 border-t border-rule-strong pt-4">
       <Field label="Your counter" hint="Edited text shows to the other side as a redline against the offer you countered.">
-        <Textarea rows={4} value={approach} onChange={(e) => setApproach(e.target.value)} />
+        <Textarea rows={4} maxLength={LIMITS.approach} value={approach} onChange={(e) => setApproach(e.target.value)} />
       </Field>
       <div className="mt-3 space-y-2">
         {rows.map((row, index) => (
@@ -182,12 +191,13 @@ function CounterForm({
         </Button>
         <div className="flex items-center gap-3">
           <Label>{total === null ? 'invalid' : formatGen(total)}</Label>
+          {problems.length > 0 && <Label className="text-seal-500">{problems[0]}</Label>}
           <Button variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
           <Button
             busy={busy}
-            disabled={total === null || total === 0n || rows.some((r) => !r.title.trim())}
+            disabled={problems.length > 0}
             onClick={() =>
               onSubmit(
                 approach.trim(),

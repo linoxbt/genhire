@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Job, JobStatus, Milestone, MilestoneStatus } from '../lib/types'
-import { formatGen, shortAddress } from '../lib/format'
+import { shortAddress } from '../lib/format'
 import { Mono } from './ui'
 
 const JOB_TONES: Record<JobStatus, string> = {
@@ -85,10 +85,6 @@ export function PartyLine({ label, address, you }: { label: string; address: str
       {you && <span className="ml-2 font-mono text-[0.625rem] uppercase tracking-wider text-seal-500">you</span>}
     </div>
   )
-}
-
-export function Money({ wei, className = '' }: { wei: string; className?: string }) {
-  return <Mono className={`tabular-nums ${className}`}>{formatGen(wei)}</Mono>
 }
 
 export function Clause({ n, title, children }: { n: number | string; title: string; children: ReactNode }) {

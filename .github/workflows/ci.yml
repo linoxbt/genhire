@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contract:
+    name: Contract — lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the GenVM linter and test SDK
+        run: |
+          python -m pip install --upgrade pip
+          pip install genlayer-py genlayer-test pytest
+
+      - name: Lint the contract
+        # A GenVM lint failure means the contract cannot deploy at all, so this
+        # runs before the tests rather than alongside them.
+        run: pipx run --spec genvm-linter genvm-lint check contracts/genhire.py
+
+      - name: Run the deterministic suites
+        # tests/direct (real GenVM semantics) + tests/unit (full state machine,
+        # escrow arithmetic, balance conservation). tests/integration is excluded
+        # by pytest.ini because it needs a funded key and a live network.
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend — typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck and build
+        # `build` is `tsc -b && vite build`, so this covers both. Note NODE_ENV
+        # is deliberately left unset: setting it to production would omit the
+        # devDependencies this build needs.
+        run: npm run build

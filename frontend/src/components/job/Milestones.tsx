@@ -1,14 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Job, Milestone } from '../../lib/types'
 import { formatGen, formatDateTime, relativeTime, sameAddress } from '../../lib/format'
 import { Button, Callout, Field, Input, Label, Textarea } from '../ui'
+import { LIMITS, isAcceptableEvidenceUrl } from '../../lib/limits'
 import { CompletionBar, SettledStamp, milestoneWord } from '../bits'
+import { useNow } from '../../lib/useNow'
 
 export interface MilestoneActions {
   onSubmit: (index: number, urls: string[], notes: string) => void
   onAdjudicate: (index: number) => void
   onDispute: (index: number, reason: string) => void
   onSettle: (index: number) => void
+  /** The exact bond this milestone needs, in wei. Read from the contract. */
+  getBond: (index: number) => Promise<string>
 }
 
 export default function Milestones({
@@ -68,15 +72,49 @@ function MilestoneCard({
   const [urls, setUrls] = useState('')
   const [notes, setNotes] = useState('')
   const [reason, setReason] = useState('')
+  // Read rather than recomputed: the 5% figure lives in the contract, and a
+  // user should see the amount they are about to bond before they sign, not
+  // after.
+  const [bond, setBond] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (panel !== 'dispute') return
+    let cancelled = false
+    setBond(null)
+    actions
+      .getBond(index)
+      .then((value) => !cancelled && setBond(value))
+      .catch(() => !cancelled && setBond(''))
+    return () => {
+      cancelled = true
+    }
+  }, [panel, index, actions])
 
   const isClient = sameAddress(job.client, viewer)
   const isFreelancer = sameAddress(job.freelancer, viewer)
   const isParty = isClient || isFreelancer
   const live = job.status === 'active'
   const disputeOpen = BigInt(job.dispute_bond || '0') > 0n && job.dispute_milestone === index
+  const now = useNow()
   const windowCloses = milestone.ruled_at + appealWindow
-  const windowClosed = windowCloses * 1000 < Date.now()
+  // `ruled_at` is 0 until a ruling lands, so only trust this once ruled.
+  const windowClosed = milestone.status === 'ruled' && windowCloses * 1000 < now
   const previousSettled = job.milestones.slice(0, index).every((m) => m.status === 'settled')
+
+  const evidenceUrls = urls
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  // The contract enforces both of these; checking here means the user finds out
+  // now rather than through a reverted transaction.
+  const evidenceProblems = [
+    ...(evidenceUrls.length > LIMITS.evidenceUrls
+      ? [`At most ${LIMITS.evidenceUrls} evidence URLs.`]
+      : []),
+    ...evidenceUrls
+      .filter((url) => !isAcceptableEvidenceUrl(url))
+      .map((url) => `“${url.slice(0, 60)}” must start with https://, http://, ipfs:// or ar://`),
+  ]
 
   return (
     <article className="relative rounded-sm border border-rule bg-vellum/40 px-5 py-5">
@@ -174,24 +212,33 @@ function MilestoneCard({
         </div>
       )}
 
-      {live && isParty && (
-        <div className="mt-4 ml-6 flex flex-wrap gap-2 border-t border-rule pt-4">
+      {live && (
+        <div className="mt-4 ml-6 flex flex-wrap items-center gap-2 border-t border-rule pt-4">
           {milestone.status === 'pending' && isFreelancer && previousSettled && (
             <Button onClick={() => setPanel(panel === 'deliver' ? null : 'deliver')}>Deliver this milestone</Button>
           )}
+
+          {/* Adjudication and settlement are permissionless in the contract,
+              precisely so a counterparty who stops responding cannot strand the
+              escrow. Gating them behind `isParty` here re-imposed the failure
+              the design removes. */}
           {milestone.status === 'submitted' && (
             <Button variant="seal" onClick={() => actions.onAdjudicate(index)} busy={busy}>
               {disputeOpen ? 'Re-adjudicate' : 'Request adjudication'}
             </Button>
           )}
-          {milestone.status === 'ruled' && !disputeOpen && !windowClosed && milestone.rounds < maxRounds && (
-            <Button variant="outline" onClick={() => setPanel(panel === 'dispute' ? null : 'dispute')}>
-              Dispute this ruling
-            </Button>
-          )}
           {milestone.status === 'ruled' && !disputeOpen && windowClosed && (
             <Button variant="seal" onClick={() => actions.onSettle(index)} busy={busy}>
               Settle — split {milestone.pct}/{100 - milestone.pct}
+            </Button>
+          )}
+          {!isParty && (milestone.status === 'submitted' || (milestone.status === 'ruled' && windowClosed)) && (
+            <span className="text-xs text-ink-faint">Anyone can do this — it cannot be withheld.</span>
+          )}
+
+          {milestone.status === 'ruled' && !disputeOpen && !windowClosed && milestone.rounds < maxRounds && isParty && (
+            <Button variant="outline" onClick={() => setPanel(panel === 'dispute' ? null : 'dispute')}>
+              Dispute this ruling
             </Button>
           )}
         </div>
@@ -209,8 +256,17 @@ function MilestoneCard({
             />
           </Field>
           <Field label="Note to the adjudicator" hint="Optional. Treated as a claim to verify, never as an instruction.">
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Input value={notes} maxLength={LIMITS.notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
+          {evidenceProblems.length > 0 && urls.trim().length > 0 && (
+            <Callout tone="amber">
+              <ul className="list-inside list-disc space-y-0.5">
+                {evidenceProblems.map((problem) => (
+                  <li key={problem}>{problem}</li>
+                ))}
+              </ul>
+            </Callout>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setPanel(null)}>
               Cancel
@@ -218,14 +274,8 @@ function MilestoneCard({
             <Button
               variant="seal"
               busy={busy}
-              disabled={urls.trim().length === 0}
-              onClick={() =>
-                actions.onSubmit(
-                  index,
-                  urls.split('\n').map((line) => line.trim()).filter(Boolean),
-                  notes.trim(),
-                )
-              }
+              disabled={evidenceUrls.length === 0 || evidenceProblems.length > 0}
+              onClick={() => actions.onSubmit(index, evidenceUrls, notes.trim())}
             >
               Submit delivery
             </Button>
@@ -239,10 +289,14 @@ function MilestoneCard({
             label="Why this ruling is wrong"
             hint="Given to the next adjudication as context, so it is a genuine second look rather than a repeat."
           >
-            <Textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Textarea rows={3} maxLength={LIMITS.reason} value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>
           <Callout tone="amber">
-            Disputing bonds 5% of this milestone. You get it back only if the percentage changes.
+            {bond === null
+              ? 'Reading the required bond from the contract…'
+              : bond === ''
+                ? 'The required bond could not be read just now. Submitting will still use the contract’s own figure.'
+                : `Disputing bonds ${formatGen(bond)}. You get it back only if the percentage changes.`}
           </Callout>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setPanel(null)}>

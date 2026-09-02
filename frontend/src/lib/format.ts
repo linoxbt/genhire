@@ -3,15 +3,31 @@ import { formatEther, parseEther } from 'viem'
 export const shortAddress = (address?: string): string =>
   !address ? '' : `${address.slice(0, 6)}…${address.slice(-4)}`
 
-/** Wei (as a decimal string) to a readable GEN figure. */
+/**
+ * Wei to a readable GEN figure. **Lossy — display only.**
+ *
+ * It truncates to six decimals, so it must never be used to seed an editable
+ * amount: round-tripping display → `toWei` silently rewrites the number. That
+ * bug shipped here once, in the counter-offer form, where opening a counter and
+ * submitting it unchanged quietly altered the agreed price. Use `weiToInput`
+ * for anything a user can edit and send back.
+ */
 export function formatGen(wei: string | bigint, { suffix = true } = {}): string {
   const value = typeof wei === 'bigint' ? wei : BigInt(wei || '0')
   const full = formatEther(value)
   const [whole, decimals = ''] = full.split('.')
   const trimmed = decimals.replace(/0+$/, '').slice(0, 6)
   const text = trimmed ? `${whole}.${trimmed}` : whole
-  return suffix ? `${text} GEN` : text
+  // Say so rather than rounding in silence: a truncated figure that looks exact
+  // is worse than one that admits it is not.
+  const truncated = decimals.replace(/0+$/, '').length > 6
+  const shown = truncated ? `≈${text}` : text
+  return suffix ? `${shown} GEN` : shown
 }
+
+/** Wei to an exact, editable decimal string. Lossless: `toWei(weiToInput(x)) === x`. */
+export const weiToInput = (wei: string | bigint): string =>
+  formatEther(typeof wei === 'bigint' ? wei : BigInt(wei || '0'))
 
 export const toWei = (gen: string): bigint => parseEther(gen as `${number}`)
 
@@ -58,12 +74,6 @@ export function relativeTime(unixSeconds: number): string {
     remaining %= size
   }
   return '—'
-}
-
-export const ordinal = (n: number): string => {
-  const suffixes = ['th', 'st', 'nd', 'rd']
-  const value = n % 100
-  return `${n}${suffixes[(value - 20) % 10] ?? suffixes[value] ?? suffixes[0]}`
 }
 
 /** A rough word-level redline between two texts, for counter-offers. */

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getAllJobs } from '../lib/genhire'
+import { getJobsFor } from '../lib/genhire'
 import { useWallet } from '../lib/wallet'
 import { useNetwork, isDeployed } from '../lib/network'
 import { formatGen, relativeTime, sameAddress } from '../lib/format'
 import type { Job } from '../lib/types'
-import { Button, EmptyState, Label, Skeleton } from '../components/ui'
+import { Button, Callout, EmptyState, Label, Skeleton } from '../components/ui'
 import { StatusChip, jobTitle } from '../components/bits'
 
 /** Everything waiting on you, and everything you're party to. */
@@ -13,12 +13,30 @@ export default function Dashboard() {
   const wallet = useWallet()
   const network = useNetwork()
   const [jobs, setJobs] = useState<Job[] | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  const address = wallet.address
 
   useEffect(() => {
     setJobs(null)
+    setFailed(false)
+    // Nothing to look up without an address; the connect prompt renders below.
+    if (!address) return
     if (!isDeployed()) return setJobs([])
-    getAllJobs().then(setJobs).catch(() => setJobs([]))
-  }, [network])
+    let cancelled = false
+    getJobsFor(address)
+      .then((result) => !cancelled && setJobs(result))
+      // An RPC failure is not "you have nothing". Coercing it to an empty list
+      // told a client with live escrow that they had no engagements.
+      .catch((err) => {
+        if (cancelled) return
+        console.error('GenHire: could not read jobs', err)
+        setFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [network, address])
 
   if (!wallet.isConnected) {
     return (
@@ -31,6 +49,18 @@ export default function Dashboard() {
           </Button>
         }
       />
+    )
+  }
+
+  if (failed) {
+    return (
+      <Callout tone="seal">
+        <strong className="font-medium">Couldn’t read your engagements.</strong>
+        <p className="mt-0.5">
+          The network didn’t answer. This says nothing about what you have on chain — reload to try
+          again.
+        </p>
+      </Callout>
     )
   }
 

@@ -11,13 +11,16 @@ from gltest.assertions import tx_execution_succeeded
 
 from conftest import (
     BRIEF,
+    EVIDENCE_URL,
     TEST_APPEAL_WINDOW,
     WAIT_INTERVAL,
     WAIT_RETRIES,
     as_account,
     deploy_genhire,
     evidence,
+    evidence_hashes,
     schedule,
+    sha256_of,
 )
 
 M1 = 6 * 10**15
@@ -96,7 +99,9 @@ def test_full_lifecycle_settles_proportionally(genhire, accounts):
     assert as_client.get_job(args=[job_id]).call()["status"] == "active"
 
     assert tx_execution_succeeded(
-        as_freelancer.submit_milestone(args=[job_id, 0, evidence(), "Delivered."]).transact(
+        as_freelancer.submit_milestone(
+            args=[job_id, 0, evidence(), evidence_hashes(sha256_of(EVIDENCE_URL)), "Delivered."]
+        ).transact(
             wait_retries=WAIT_RETRIES, wait_interval=WAIT_INTERVAL
         )
     )
@@ -108,7 +113,10 @@ def test_full_lifecycle_settles_proportionally(genhire, accounts):
 
     milestone = as_client.get_job(args=[job_id]).call()["milestones"][0]
     assert milestone["status"] == "ruled"
-    assert 0 <= milestone["pct"] <= 100
+    # `_coerce_pct` clamps and `_split` rejects out-of-range, so a bare
+    # 0 <= pct <= 100 assertion cannot fail. What is worth asserting is that the
+    # figure is on-step, which is what makes settlement deterministic.
+    assert milestone["pct"] % 5 == 0, "rulings must be quantised"
     assert milestone["reasoning"].strip()
 
     time.sleep(TEST_APPEAL_WINDOW + 10)

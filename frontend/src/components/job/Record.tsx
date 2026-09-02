@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Job, Ruling } from '../../lib/types'
 import { formatGen, formatDateTime, shortAddress, sameAddress, toWei } from '../../lib/format'
 import { Button, Callout, Field, Input, Label, Textarea } from '../ui'
+import { LIMITS, scheduleProblems } from '../../lib/limits'
 
 /**
  * The running record of everything the contract has ruled on, plus the two
@@ -140,7 +141,13 @@ function ScopeForm({
         label="The work in question"
         hint="Describe it plainly. Validators rule on it against the signed agreement, not against either party's memory of the conversation."
       >
-        <Textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Also add a dark mode to the cart page." />
+        <Textarea
+          rows={3}
+          maxLength={LIMITS.scopeRequest}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Also add a dark mode to the cart page."
+        />
       </Field>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
@@ -178,6 +185,14 @@ function ChangeOrderForm({
   const deadline = Math.floor(Date.now() / 1000) + Number(days || 0) * 86400
   const deadlineValid = Number(days) > 0 && deadline >= job.deadline
 
+  // The cap here is `existing + added`, not just the rows in this form - the
+  // one place the milestone limit is not simply "eight in this list".
+  const problems = [
+    ...(request.trim() ? [] : ['Say what the amendment adds.']),
+    ...scheduleProblems(rows, toWei, { existing: job.milestones.length }),
+    ...(deadlineValid ? [] : ['The new deadline must be in the future and no earlier than the current one.']),
+  ]
+
   return (
     <div className="mt-4 space-y-3 border-t border-rule-strong pt-4">
       <Callout tone="amber">
@@ -185,7 +200,7 @@ function ChangeOrderForm({
         both parties sign again before it is in force.
       </Callout>
       <Field label="What you're adding">
-        <Textarea rows={3} value={request} onChange={(e) => setRequest(e.target.value)} />
+        <Textarea rows={3} maxLength={LIMITS.scopeRequest} value={request} onChange={(e) => setRequest(e.target.value)} />
       </Field>
       <div>
         <Label className="mb-2">New milestones</Label>
@@ -217,13 +232,27 @@ function ChangeOrderForm({
             </div>
           ))}
         </div>
-        <Button variant="ghost" className="mt-2" onClick={() => setRows((c) => [...c, { title: '', gen: '' }])}>
+          <Button
+          variant="ghost"
+          className="mt-2"
+          disabled={job.milestones.length + rows.length >= LIMITS.milestones}
+          onClick={() => setRows((c) => [...c, { title: '', gen: '' }])}
+        >
           + Milestone
         </Button>
       </div>
       <Field label="New deadline (days from now)" hint="An amendment may extend the deadline, never shorten it.">
         <Input value={days} onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ''))} className="w-32 font-mono" />
       </Field>
+      {problems.length > 0 && (request.trim() !== '' || rows.some((r) => r.title || r.gen)) && (
+        <Callout tone="amber">
+          <ul className="list-inside list-disc space-y-0.5">
+            {problems.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+        </Callout>
+      )}
       <div className="flex items-center justify-between">
         <Label>{total === null ? 'invalid' : `funding ${formatGen(total)}`}</Label>
         <div className="flex gap-2">
@@ -233,7 +262,7 @@ function ChangeOrderForm({
           <Button
             variant="seal"
             busy={busy}
-            disabled={!request.trim() || !total || total === 0n || !deadlineValid || rows.some((r) => !r.title.trim())}
+            disabled={problems.length > 0}
             onClick={() =>
               onSubmit(
                 request.trim(),

@@ -1,5 +1,6 @@
 """Fixtures for the in-process suite. See glstub.py for what this proves."""
 import datetime
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -46,6 +47,10 @@ class Harness:
     def acting_as(self, sender, value: int = 0) -> None:
         self.gl.message.sender_address = sender
         self.gl.message.value = glstub.u256(value)
+        # Value attached to a call is credited to the contract before it runs,
+        # as on chain - so the stub's balance tracks what is really escrowed and
+        # an over-payment raises instead of passing silently.
+        self.gl.balance += int(value)
 
     @property
     def transfers(self):
@@ -114,9 +119,29 @@ class Harness:
         self.contract.open_change_order(job_id, request, self.schedule(*amounts, prefix=prefix), self.at(days * ONE_DAY))
         self.acting_as(client, 0)
 
-    def submit(self, job_id, index, freelancer=FREELANCER, notes="Done") -> None:
+    EVIDENCE_URL = "https://example.com/build"
+
+    def submit(
+        self,
+        job_id,
+        index,
+        freelancer=FREELANCER,
+        notes="Done",
+        content="The delivered build.",
+        url=EVIDENCE_URL,
+    ) -> None:
+        """Deliver a milestone, committing to the evidence content.
+
+        Registers the page with the stub's fetcher and submits the sha256 of
+        exactly those bytes, so the commitment the contract checks at
+        adjudication is the one a real freelancer would have made.
+        """
+        self.gl.nondet.web.pages[url] = content
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         self.acting_as(freelancer, 0)
-        self.contract.submit_milestone(job_id, index, json.dumps(["https://example.com/build"]), notes)
+        self.contract.submit_milestone(
+            job_id, index, json.dumps([url]), json.dumps([digest]), notes
+        )
 
     def adjudicate(self, job_id, index, pct, reasoning="Assessed against the criteria") -> None:
         self.queue_verdict({"completion_pct": pct, "reasoning": reasoning, "criteria": []})

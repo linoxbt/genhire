@@ -2,5 +2,14 @@
   "name": "genhire-scripts",
   "private": true,
   "type": "module",
-  "description": "Node helpers that drive the GenHire contract on a live network. genlayer-js is symlinked from the global genlayer CLI's bundled node_modules; see README."
+  "description": "Node helpers that drive the GenHire contract on a live network.",
+  "scripts": {
+    "smoke": "node scripts/smoke.mjs",
+    "test": "python3 -m pytest -q",
+    "lint:contract": "uvx --from genvm-linter genvm-lint check contracts/genhire.py"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0",
+    "genlayer-js": "^1.1.8"
+  }
 }

@@ -4,7 +4,8 @@ import { postJob, type MilestoneDraft } from '../lib/genhire'
 import { useWallet } from '../lib/wallet'
 import { useTx } from '../lib/useTx'
 import { formatGen, toWei } from '../lib/format'
-import { Button, Callout, Field, Input, Label, Sheet, Textarea } from '../components/ui'
+import { LIMITS, scheduleProblems } from '../lib/limits'
+import { Button, Callout, Field, Form, Input, Label, Sheet, Textarea } from '../components/ui'
 import TxNotice from '../components/TxNotice'
 
 interface Row {
@@ -17,7 +18,7 @@ const BLANK: Row = { title: '', gen: '' }
 export default function PostBrief() {
   const wallet = useWallet()
   const navigate = useNavigate()
-  const { state, run, reset, busy } = useTx()
+  const { state, run, fail, reset, busy } = useTx()
 
   const [brief, setBrief] = useState('')
   const [days, setDays] = useState('30')
@@ -34,10 +35,7 @@ export default function PostBrief() {
   const problems = useMemo(() => {
     const list: string[] = []
     if (brief.trim().length < 40) list.push('The brief needs enough detail for the contract to draft criteria from it.')
-    if (rows.some((row) => !row.title.trim())) list.push('Every milestone needs a title.')
-    if (total === null) list.push('One of the amounts is not a number.')
-    else if (total === 0n) list.push('The engagement has to be funded.')
-    if (rows.length > 8) list.push('At most eight milestones.')
+    list.push(...scheduleProblems(rows, toWei))
     if (!(Number(days) > 0)) list.push('The deadline must be a positive number of days.')
     return list
   }, [brief, rows, total, days])
@@ -46,7 +44,15 @@ export default function PostBrief() {
     setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)))
 
   async function submit() {
-    if (!wallet.ctx || total === null) return
+    if (!wallet.ctx || total === null) {
+      fail('Connect a wallet to post and fund a brief.')
+      return
+    }
+    if (wallet.wrongChain) {
+      fail('Your wallet is on a different network than the one selected. Switch it, then try again.')
+      wallet.switchChain()
+      return
+    }
     const milestones: MilestoneDraft[] = rows.map((row) => ({ title: row.title, amount: toWei(row.gen).toString() }))
     const deadline = Math.floor(Date.now() / 1000) + Number(days) * 86400
     await run(() => postJob(wallet.ctx!, brief.trim(), milestones, deadline, total), {
@@ -67,13 +73,14 @@ export default function PostBrief() {
       </header>
 
       <Sheet className="p-7">
-        <div className="space-y-6">
+        <Form onSubmit={submit} disabled={problems.length > 0 || busy} className="space-y-6">
           <Field
             label="The brief"
             hint="What needs building, for whom, and what “done” looks like. The contract drafts from this text."
           >
             <Textarea
               rows={7}
+              maxLength={LIMITS.brief}
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
               placeholder="Build a checkout flow for a small storefront: a cart page, a payment step and an order confirmation email. It has to work on mobile and use our existing payments API."
@@ -141,7 +148,7 @@ export default function PostBrief() {
             />
           </Field>
 
-          {problems.length > 0 && brief.length > 0 && (
+          {problems.length > 0 && (brief.length > 0 || rows.some((r) => r.title || r.gen)) && (
             <Callout tone="amber">
               <ul className="list-inside list-disc space-y-0.5">
                 {problems.map((problem) => (
@@ -158,16 +165,16 @@ export default function PostBrief() {
               {wallet.isConnected ? 'Signing this transfers the escrow to the contract.' : 'Connect a wallet to post.'}
             </p>
             {wallet.isConnected ? (
-              <Button variant="seal" onClick={submit} busy={busy} disabled={problems.length > 0}>
+              <Button type="submit" variant="seal" busy={busy} disabled={problems.length > 0}>
                 Post and fund
               </Button>
             ) : (
-              <Button onClick={wallet.connect} disabled={!wallet.enabled}>
+              <Button type="button" onClick={wallet.connect} disabled={!wallet.enabled}>
                 Connect wallet
               </Button>
             )}
           </div>
-        </div>
+        </Form>
       </Sheet>
     </div>
   )

@@ -19,6 +19,9 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof VARIANTS; busy?: boolean }) {
   return (
     <button
+      // Explicit default: a <button> inside a <form> submits unless told
+      // otherwise, so every incidental button would become a submit button.
+      type={rest.type ?? 'button'}
       {...rest}
       disabled={rest.disabled || busy}
       className={`inline-flex items-center justify-center gap-2 rounded-sm px-4 py-2 text-sm font-medium
@@ -107,4 +110,38 @@ export function Callout({
     amber: 'border-amber-500/30 bg-amber-100 text-amber-700',
   } as const
   return <div className={`rounded-sm border px-4 py-3 text-sm ${tones[tone]}`}>{children}</div>
+}
+
+
+/**
+ * A form whose submit handler runs on Enter as well as on the button.
+ *
+ * Every input group in this app used to be a bare <div>, so pressing Enter in a
+ * text field did nothing at all - there was no keyboard path to submit
+ * anything. Wrapping in a real <form> restores the browser behaviour people
+ * expect, and `noValidate` keeps our own messages rather than the browser's.
+ */
+export function Form({
+  onSubmit,
+  disabled = false,
+  className = '',
+  children,
+}: {
+  onSubmit: () => void
+  disabled?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <form
+      noValidate
+      className={className}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!disabled) onSubmit()
+      }}
+    >
+      {children}
+    </form>
+  )
 }

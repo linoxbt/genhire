@@ -162,3 +162,49 @@ def test_an_amendment_cannot_be_backdated(h, client, UserError):
     h.acting_as(client, 500)
     with pytest.raises(UserError, match="new_deadline must be in the future"):
         h.contract.open_change_order(job_id, "More work", h.schedule(500), h.at(-1))
+
+
+def test_an_amendment_does_not_rewrite_a_settled_milestone_s_criteria(h):
+    """Regression: re-drafting used to overwrite every milestone's criteria.
+
+    A settled milestone was judged against specific text. An amendment re-drafts
+    the whole agreement, and rewriting that text afterwards destroys the record
+    of what the ruling actually held the work to — while the per-criterion
+    verdicts stay behind, so the two can disagree in both content and count.
+    """
+    job_id = h.engage(1000)
+    h.deliver_and_rule(job_id, 0, 100)
+    h.settle(job_id, 0)
+
+    settled_before = h.contract.get_job(job_id)["milestones"][0]["criteria"]
+    assert settled_before, "precondition: the settled milestone has criteria"
+
+    h.change_order(job_id, 500)
+    h.draft(
+        job_id,
+        payload=h.sow_payload(2, scope="Checkout flow plus an admin report"),
+    )
+
+    milestones = h.contract.get_job(job_id)["milestones"]
+    assert milestones[0]["criteria"] == settled_before, "settled criteria must be immutable"
+    assert milestones[0]["status"] == "settled"
+    # The new, pending milestone does take the freshly drafted criteria.
+    assert milestones[1]["criteria"] == ["Criterion for milestone 2"]
+
+
+def test_scope_rulings_are_capped(h, client, UserError):
+    """Each one is a full validator round with no state change to stop it, so
+    without a cap a party could burn validator time for free and fill the
+    ruling log so later legitimate rulings cannot be recorded."""
+    job_id = h.engage(1000)
+    cap = h.contract.get_max_scope_rulings()
+
+    for i in range(cap):
+        h.queue_verdict({"ruling": "IN_SCOPE", "reasoning": f"Covered {i}"})
+        h.acting_as(client, 0)
+        h.contract.rule_scope(job_id, f"Question {i}")
+
+    h.queue_verdict({"ruling": "IN_SCOPE", "reasoning": "Covered"})
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match=f"used all {cap} scope rulings"):
+        h.contract.rule_scope(job_id, "One more")

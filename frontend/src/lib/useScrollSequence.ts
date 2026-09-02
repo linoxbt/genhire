@@ -26,6 +26,8 @@ export function useScrollSequence<T extends HTMLElement>(count: number) {
         panel.style.opacity = '1'
         panel.style.transform = 'none'
         panel.style.position = 'relative'
+        panel.setAttribute('aria-hidden', 'false')
+        panel.inert = false
       })
       return
     }
@@ -53,6 +55,12 @@ export function useScrollSequence<T extends HTMLElement>(count: number) {
         const scale = 0.92 + 0.08 * opacity
         panel.style.opacity = String(opacity)
         panel.style.transform = `translateY(${offset}px) scale(${scale})`
+        // A panel faded to nothing is still read aloud and still in the
+        // accessibility tree, so all N panels arrived as one wall of text.
+        // Hide the ones that are not on screen.
+        const hidden = opacity < 0.5
+        panel.setAttribute('aria-hidden', hidden ? 'true' : 'false')
+        panel.inert = hidden
       })
     }
 

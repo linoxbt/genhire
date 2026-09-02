@@ -35,7 +35,19 @@ export default function Sow({
     )
   }
 
-  if (job.status === 'awaiting_sow' || !sow || sow.version === 0) {
+  // A failed read is not the same thing as "not drafted yet". Conflating them
+  // showed the drafting call-to-action on an already-active job, where pressing
+  // it can only revert.
+  if (!sow) {
+    return (
+      <Callout tone="seal">
+        The Statement of Work could not be read from the contract just now. Reload to try again — the
+        agreement itself is unaffected.
+      </Callout>
+    )
+  }
+
+  if (job.status === 'awaiting_sow' || sow.version === 0) {
     return (
       <div className="space-y-4">
         <Callout tone="amber">

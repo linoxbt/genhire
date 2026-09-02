@@ -12,12 +12,18 @@ import type { Job, Proposal, Ruling, StatementOfWork } from './types'
 
 type WriteContext = { account: `0x${string}`; provider: EIP1193Provider }
 
-async function read<T>(functionName: string, args: unknown[] = []): Promise<T> {
+/** What genlayer-js accepts as a calldata argument. */
+type Arg = string | number | boolean | bigint | Arg[]
+
+async function read<T>(functionName: string, args: Arg[] = []): Promise<T> {
   return withRetry(async () => {
     const result = await readClient().readContract({
       address: getContractAddress(),
       functionName,
-      args: args as never,
+      // genlayer-js types this as its own CalldataEncodable union; `Arg` is the
+      // subset this app actually sends, so the cast is narrow rather than the
+      // blanket `as never` that previously erased argument checking entirely.
+      args: args as Parameters<ReturnType<typeof readClient>['readContract']>[0]['args'],
     })
     return result as T
   })
@@ -26,13 +32,13 @@ async function read<T>(functionName: string, args: unknown[] = []): Promise<T> {
 async function write(
   { account, provider }: WriteContext,
   functionName: string,
-  args: unknown[] = [],
+  args: Arg[] = [],
   value: bigint = 0n,
 ): Promise<`0x${string}`> {
   return writeClient(account, provider).writeContract({
     address: getContractAddress(),
     functionName,
-    args: args as never,
+    args: args as Parameters<ReturnType<typeof writeClient>['writeContract']>[0]['args'],
     value,
   })
 }
@@ -47,15 +53,30 @@ export const getRulings = (jobId: number) => read<Ruling[]>('get_rulings', [jobI
 export const getSow = (jobId: number) => read<StatementOfWork>('get_sow', [jobId])
 export const getAppealWindow = () => read<number>('get_appeal_window_seconds')
 export const getMaxDisputeRounds = () => read<number>('get_max_dispute_rounds')
+/** Wei, as a decimal string - a bond routinely exceeds Number.MAX_SAFE_INTEGER. */
 export const getRequiredBond = (jobId: number, milestoneIdx: number) =>
-  read<number>('get_required_bond', [jobId, milestoneIdx])
+  read<string>('get_required_bond', [jobId, milestoneIdx])
 
-/** The board and dashboard both need every job, read a few at a time so the
- *  first load doesn't trip the RPC's rate limit. */
-export async function getAllJobs(): Promise<Job[]> {
-  const ids = await listJobs()
+async function hydrate(ids: number[]): Promise<Job[]> {
   const jobs = await mapWithConcurrency(ids, 4, (id) => getJob(id))
   return jobs.sort((a, b) => b.id - a.id)
+}
+
+/** Every job on the network. Used by the board and the landing stats. */
+export async function getAllJobs(): Promise<Job[]> {
+  return hydrate(await listJobs())
+}
+
+/**
+ * Only the jobs an address is party to.
+ *
+ * Filtering server-side matters: fetching every job and discarding most of them
+ * cost one RPC read per job on the network to render a handful of rows, against
+ * a shared per-minute bucket and a daily quota. `list_jobs_for` exists in the
+ * contract for exactly this.
+ */
+export async function getJobsFor(address: string): Promise<Job[]> {
+  return hydrate(await listJobsFor(address))
 }
 
 // -- writes ------------------------------------------------------------
@@ -93,13 +114,28 @@ export const draftSow = (ctx: WriteContext, jobId: number) => write(ctx, 'draft_
 export const signSow = (ctx: WriteContext, jobId: number, sowHash: string) =>
   write(ctx, 'sign_sow', [jobId, sowHash])
 
+/**
+ * Deliver a milestone, committing to the evidence content.
+ *
+ * `hashes` is one sha256 per URL, in the same order. Content-addressed
+ * references (`ipfs://`, `ar://`) pass an empty string, because the reference
+ * already is a hash of the bytes.
+ */
 export const submitMilestone = (
   ctx: WriteContext,
   jobId: number,
   milestoneIdx: number,
   evidenceUrls: string[],
+  hashes: string[],
   notes: string,
-) => write(ctx, 'submit_milestone', [jobId, milestoneIdx, JSON.stringify(evidenceUrls), notes])
+) =>
+  write(ctx, 'submit_milestone', [
+    jobId,
+    milestoneIdx,
+    JSON.stringify(evidenceUrls),
+    JSON.stringify(hashes),
+    notes,
+  ])
 
 export const adjudicateMilestone = (ctx: WriteContext, jobId: number, milestoneIdx: number) =>
   write(ctx, 'adjudicate_milestone', [jobId, milestoneIdx])

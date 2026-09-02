@@ -4,6 +4,8 @@ import json
 import pytest
 
 EVIDENCE = json.dumps(["https://example.com/build"])
+# A well-formed sha256; content is only re-checked when a fetch succeeds.
+ONE_HASH = json.dumps(["a" * 64])
 
 
 # -- delivery ----------------------------------------------------------
@@ -12,14 +14,14 @@ def test_only_the_freelancer_can_deliver(h, client, UserError):
     job_id = h.engage(1000)
     h.acting_as(client, 0)
     with pytest.raises(UserError, match="Only the freelancer can submit"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, "")
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "")
 
 
 def test_milestones_are_delivered_in_order(h, freelancer, UserError):
     job_id = h.engage(600, 400)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="Milestone 0 must settle before milestone 1"):
-        h.contract.submit_milestone(job_id, 1, EVIDENCE, "")
+        h.contract.submit_milestone(job_id, 1, EVIDENCE, ONE_HASH, "")
 
 
 def test_the_next_milestone_opens_once_the_previous_settles(h):
@@ -35,7 +37,7 @@ def test_a_milestone_cannot_be_delivered_twice(h, freelancer, UserError):
     h.submit(job_id, 0)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="not awaiting delivery"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, "")
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "")
 
 
 def test_delivery_is_blocked_after_the_deadline(h, freelancer, UserError):
@@ -43,14 +45,14 @@ def test_delivery_is_blocked_after_the_deadline(h, freelancer, UserError):
     h.warp(31 * 24 * 60 * 60)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="deadline for this job has passed"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, "")
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "")
 
 
 def test_a_nonexistent_milestone_is_rejected(h, freelancer, UserError):
     job_id = h.engage(1000)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="Milestone 5 does not exist"):
-        h.contract.submit_milestone(job_id, 5, EVIDENCE, "")
+        h.contract.submit_milestone(job_id, 5, EVIDENCE, ONE_HASH, "")
 
 
 @pytest.mark.parametrize("bad", ["[]", '["ftp://x/y"]', '["not-a-url"]', "not json"])
@@ -58,14 +60,14 @@ def test_malformed_evidence_is_rejected(h, freelancer, UserError, bad):
     job_id = h.engage(1000)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError):
-        h.contract.submit_milestone(job_id, 0, bad, "")
+        h.contract.submit_milestone(job_id, 0, bad, ONE_HASH, "")
 
 
 @pytest.mark.parametrize("scheme", ["https://", "http://", "ipfs://", "ar://"])
 def test_accepted_evidence_schemes(h, freelancer, scheme):
     job_id = h.engage(1000)
     h.acting_as(freelancer, 0)
-    h.contract.submit_milestone(job_id, 0, json.dumps([f"{scheme}example.com/x"]), "")
+    h.contract.submit_milestone(job_id, 0, json.dumps([f"{scheme}example.com/x"]), ONE_HASH, "")
     assert h.contract.get_job(job_id)["milestones"][0]["status"] == "submitted"
 
 
@@ -230,3 +232,66 @@ def test_an_unknown_job_is_rejected_everywhere(h, client, UserError):
     h.acting_as(client, 0)
     with pytest.raises(UserError, match="Job 999 does not exist"):
         h.contract.get_job(999)
+
+
+# -- remaining size caps and empty-input guards ------------------------
+
+def test_delivery_and_dispute_size_caps(h, client, freelancer, UserError):
+    module = h.module
+    job_id = h.engage(1000)
+
+    h.acting_as(freelancer, 0)
+    with pytest.raises(UserError, match="notes too long"):
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "x" * (module.MAX_NOTES_CHARS + 1))
+    with pytest.raises(UserError, match="at most 5 evidence URLs"):
+        h.contract.submit_milestone(job_id, 0, json.dumps(["https://a.com"] * 6), json.dumps(["a" * 64] * 6), "")
+
+    h.submit(job_id, 0)
+    h.adjudicate(job_id, 0, 40)
+    bond = int(h.contract.get_required_bond(job_id, 0))
+    h.acting_as(client, bond)
+    with pytest.raises(UserError, match="reason too long"):
+        h.contract.dispute_ruling(job_id, 0, "x" * (module.MAX_REASON_CHARS + 1))
+
+
+def test_a_milestone_with_no_ruling_cannot_be_disputed(h, client, UserError):
+    job_id = h.engage(600, 400)
+    h.submit(job_id, 0)
+    h.acting_as(client, 1)
+    with pytest.raises(UserError, match="no ruling to dispute"):
+        h.contract.dispute_ruling(job_id, 0, "Too early")
+
+
+def test_scope_and_change_order_text_is_validated(h, client, UserError):
+    module = h.module
+    job_id = h.engage(1000)
+
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match="request_text must not be empty"):
+        h.contract.rule_scope(job_id, "   ")
+    with pytest.raises(UserError, match="request_text too long"):
+        h.contract.rule_scope(job_id, "x" * (module.MAX_SCOPE_REQUEST_CHARS + 1))
+
+    h.acting_as(client, 500)
+    with pytest.raises(UserError, match="request_text must not be empty"):
+        h.contract.open_change_order(job_id, "  ", h.schedule(500), h.at(60 * 86400))
+
+
+def test_expiry_with_nothing_escrowed_is_rejected(h, client, UserError):
+    """A cancelled job has zero escrow; expiring it again must not emit a
+    zero-value transfer or claim to refund anything."""
+    job_id = h.post(1000)
+    h.acting_as(client, 0)
+    h.contract.cancel_job(job_id)
+    h.warp(31 * 24 * 60 * 60)
+    with pytest.raises(UserError, match="while the job is 'cancelled'"):
+        h.contract.refund_expired(job_id)
+
+
+def test_an_empty_review_is_rejected(h, client, UserError):
+    job_id = h.engage(1000)
+    h.deliver_and_rule(job_id, 0, 100)
+    h.settle(job_id, 0)
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match="must not be empty"):
+        h.contract.submit_review(job_id, "   ")

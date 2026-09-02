@@ -43,6 +43,17 @@ function NetworkSwitcher({ dark }: { dark: boolean }) {
 function WalletButton({ dark }: { dark: boolean }) {
   const wallet = useWallet()
   if (!wallet.enabled) return null
+  if (wallet.wrongChain) {
+    return (
+      <button
+        onClick={wallet.switchChain}
+        title="Your wallet is on a different network than the one selected here"
+        className="shrink-0 rounded-full border border-seal-500 bg-seal-500/10 px-3.5 py-1.5 font-mono text-[0.6875rem] tracking-wider text-seal-500 uppercase transition-colors hover:bg-seal-500/20"
+      >
+        Wrong network
+      </button>
+    )
+  }
   return (
     <button
       onClick={wallet.connect}
@@ -85,8 +96,14 @@ export default function Shell() {
             <NavMenu dark={dark} />
           </nav>
         </div>
-        {!isDeployed(network) && !dark && (
-          <div className="border-t border-seal-200 bg-seal-50 px-5 py-1.5 text-center text-xs text-seal-700">
+        {/* Shown in both tones. Hiding it while the header floats over a dark
+            hero suppressed it on exactly the page a new visitor arrives at. */}
+        {!isDeployed(network) && (
+          <div
+            className={`border-t px-5 py-1.5 text-center text-xs ${
+              dark ? 'border-paper/15 bg-ink/80 text-seal-400 backdrop-blur' : 'border-seal-200 bg-seal-50 text-seal-700'
+            }`}
+          >
             GenHire is not deployed on {NETWORKS[network].label} yet — switch networks to use the app.
           </div>
         )}

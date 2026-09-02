@@ -91,7 +91,10 @@ export default function NavMenu({ dark = false }: { dark?: boolean }) {
       document.body.style.top = ''
       document.body.style.left = ''
       document.body.style.right = ''
-      window.scrollTo(0, scrollY)
+      // Instant, not smooth. The page sets `scroll-behavior: smooth` globally,
+      // which turns this restore into a visible ~1s drift back to where the
+      // reader already was - and leaves the position wrong for the duration.
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'instant' as ScrollBehavior })
     }
   }, [open])
 

@@ -64,7 +64,18 @@ export function useTx() {
     [],
   )
 
-  return { state, run, reset: () => setState({ phase: 'idle' }), busy: state.phase === 'signing' || state.phase === 'waiting' }
+  /** Report a failure that happened before any transaction was attempted -
+   *  chiefly "no wallet connected". Without this, a guard like `ctx && run(...)`
+   *  silently does nothing and the button looks broken. */
+  const fail = useCallback((message: string) => setState({ phase: 'failed', message }), [])
+
+  return {
+    state,
+    run,
+    fail,
+    reset: () => setState({ phase: 'idle' }),
+    busy: state.phase === 'signing' || state.phase === 'waiting',
+  }
 }
 
 function describe(error: unknown): string {

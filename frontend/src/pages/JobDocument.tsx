@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { EIP1193Provider } from 'viem'
 import { Link, useParams } from 'react-router-dom'
 import * as api from '../lib/genhire'
 import { useWallet } from '../lib/wallet'
 import { useTx } from '../lib/useTx'
-import { useNetwork } from '../lib/network'
+import { retryRead } from '../lib/tx'
+import { NETWORKS, useNetwork } from '../lib/network'
+import { useNow } from '../lib/useNow'
+import { commitEvidence } from '../lib/evidence'
 import { formatGen, formatDate, relativeTime, sameAddress, toWei } from '../lib/format'
 import type { Job, Proposal, Ruling, StatementOfWork } from '../lib/types'
 import { ZERO_ADDRESS } from '../lib/types'
@@ -22,10 +26,13 @@ import Record from '../components/job/Record'
  */
 export default function JobDocument() {
   const { id } = useParams()
-  const jobId = Number(id)
+  // `/job/abc` would otherwise send NaN straight into a contract read.
+  const jobId = /^\d+$/.test(id ?? '') ? Number(id) : NaN
+  const validId = Number.isInteger(jobId) && jobId > 0
   const network = useNetwork()
+  const now = useNow()
   const wallet = useWallet()
-  const { state, run, reset, busy } = useTx()
+  const { state, run, fail, reset, busy } = useTx()
 
   const [job, setJob] = useState<Job | null>(null)
   const [proposals, setProposals] = useState<Proposal[]>([])
@@ -36,33 +43,82 @@ export default function JobDocument() {
   const [error, setError] = useState<string | null>(null)
   const [review, setReview] = useState('')
 
-  const load = useCallback(async () => {
-    const [nextJob, nextProposals, nextRulings, nextSow, window, rounds] = await Promise.all([
-      api.getJob(jobId),
-      api.getProposals(jobId),
-      api.getRulings(jobId),
-      api.getSow(jobId),
-      api.getAppealWindow(),
-      api.getMaxDisputeRounds(),
-    ])
-    setJob(nextJob)
-    setProposals(nextProposals)
-    setRulings(nextRulings)
-    setSow(nextSow)
-    setAppealWindow(Number(window))
-    setMaxRounds(Number(rounds))
-  }, [jobId])
+  const loadToken = useRef<{ cancelled: boolean }>({ cancelled: false })
+
+  const load = useCallback(
+    async (token: { cancelled: boolean } = loadToken.current) => {
+      // Wrapped in retryRead because a node can lag a moment behind a write it
+      // just finalized: without it the page could re-render pre-transaction
+      // state directly beside "Done — recorded on chain".
+      const [nextJob, nextProposals, nextRulings, nextSow, window, rounds] = await Promise.all([
+        retryRead(() => api.getJob(jobId)),
+        retryRead(() => api.getProposals(jobId)),
+        retryRead(() => api.getRulings(jobId)),
+        retryRead(() => api.getSow(jobId)),
+        api.getAppealWindow(),
+        api.getMaxDisputeRounds(),
+      ])
+      if (token.cancelled) return
+      setJob(nextJob)
+      setProposals(nextProposals)
+      setRulings(nextRulings)
+      setSow(nextSow)
+      setAppealWindow(Number(window))
+      setMaxRounds(Number(rounds))
+    },
+    [jobId],
+  )
 
   useEffect(() => {
     setJob(null)
     setError(null)
-    load().catch((err) => setError(err instanceof Error ? err.message : String(err)))
-  }, [load, network])
-
-  const act = (send: () => Promise<`0x${string}`>, note: string) =>
-    run(send, { note, onDone: load })
+    if (!validId) {
+      setError(`“${id}” is not an engagement number.`)
+      return
+    }
+    // Cancelled on unmount and on any id/network change. Without this, six
+    // in-flight reads for job 1 could resolve after a navigation to job 2 and
+    // paint job 1's parties and escrow under job 2's heading.
+    const token = { cancelled: false }
+    loadToken.current = token
+    load(token).catch((err) => {
+      if (token.cancelled) return
+      setError(err instanceof Error ? err.message : String(err))
+    })
+    return () => {
+      token.cancelled = true
+    }
+  }, [load, network, validId, id])
 
   const ctx = wallet.ctx
+
+  /**
+   * Runs one action, or explains why it cannot run.
+   *
+   * Several of these methods are permissionless, so their buttons are shown to
+   * everyone - including visitors with no wallet. Guarding with `ctx && run(...)`
+   * made those clicks a silent no-op; routing the missing-wallet case through
+   * the same notice the user already reads for every other failure is the
+   * difference between "nothing happened" and "connect a wallet to do this".
+   */
+  const act = (send: (context: NonNullable<typeof ctx>) => Promise<`0x${string}`>, note: string) => {
+    if (!ctx) {
+      fail(
+        wallet.enabled
+          ? 'Connect a wallet to sign this transaction.'
+          : 'Wallet connection is not configured on this deployment, so this is a read-only view.',
+      )
+      return
+    }
+    if (wallet.wrongChain) {
+      // Signing here would hand a transaction built for the selected network to
+      // a provider sitting on a different one.
+      fail(`Your wallet is on a different network than ${NETWORKS[network].label}. Switch it, then try again.`)
+      wallet.switchChain()
+      return
+    }
+    return run(() => send(ctx), { note, onDone: () => load(loadToken.current) })
+  }
 
   if (error) {
     return (
@@ -92,7 +148,7 @@ export default function JobDocument() {
   const isParty = isClient || isFreelancer
   const engaged = job.freelancer !== ZERO_ADDRESS
   const paid = totalPaid(job)
-  const deadlinePassed = job.deadline * 1000 < Date.now()
+  const deadlinePassed = job.deadline * 1000 < now
   const alreadyReviewed = job.reviews.some((r) => sameAddress(r.reviewer, viewer))
 
   return (
@@ -160,16 +216,16 @@ export default function JobDocument() {
             proposals={proposals}
             viewer={viewer}
             busy={busy}
-            onAccept={(idx) => ctx && act(() => api.acceptProposal(ctx, job.id, idx), 'Accepting the terms…')}
+            onAccept={(idx) => act((c) => api.acceptProposal(c, job.id, idx), 'Accepting the terms…')}
             onCounter={(parentIdx, approach, milestones) =>
-              ctx && act(() => api.counterProposal(ctx, job.id, parentIdx, approach, milestones), 'Sending your counter…')
+              act((c) => api.counterProposal(c, job.id, parentIdx, approach, milestones), 'Sending your counter…')
             }
           />
           {job.status === 'drafting' && !isClient && wallet.isConnected && (
             <ProposeForm
               busy={busy}
               onSubmit={(approach, milestones) =>
-                ctx && act(() => api.submitProposal(ctx, job.id, approach, milestones), 'Submitting your proposal…')
+                act((c) => api.submitProposal(c, job.id, approach, milestones), 'Submitting your proposal…')
               }
             />
           )}
@@ -185,13 +241,12 @@ export default function JobDocument() {
             viewer={viewer}
             busy={busy}
             onDraft={() =>
-              ctx &&
               act(
-                () => api.draftSow(ctx, job.id),
+                (c) => api.draftSow(c, job.id),
                 'The contract is drafting the agreement — validators are writing and checking the criteria. This takes a few minutes.',
               )
             }
-            onSign={() => ctx && act(() => api.signSow(ctx, job.id, job.sow_hash), 'Recording your signature…')}
+            onSign={() => act((c) => api.signSow(c, job.id, job.sow_hash), 'Recording your signature…')}
           />
         </Clause>
 
@@ -203,21 +258,35 @@ export default function JobDocument() {
             maxRounds={maxRounds}
             busy={busy}
             actions={{
+              // The content commitment is computed inside `send`, so a fetch
+              // failure surfaces through the same notice as everything else.
               onSubmit: (index, urls, notes) =>
-                ctx && act(() => api.submitMilestone(ctx, job.id, index, urls, notes), 'Recording the delivery…'),
+                act(async (c) => {
+                  const { hashes, unreachable } = await commitEvidence(urls)
+                  if (unreachable.length > 0) {
+                    throw new Error(
+                      `Could not read ${unreachable.join(', ')} from this browser to commit its ` +
+                        `content. Publish it somewhere fetchable, or use an ipfs:// reference.`,
+                    )
+                  }
+                  return api.submitMilestone(c, job.id, index, urls, hashes, notes)
+                }, 'Hashing the evidence and recording the delivery…'),
               onAdjudicate: (index) =>
-                ctx &&
                 act(
-                  () => api.adjudicateMilestone(ctx, job.id, index),
+                  (c) => api.adjudicateMilestone(c, job.id, index),
                   'Validators are fetching the evidence and judging it against the criteria. This takes a few minutes.',
                 ),
-              onDispute: async (index, reason) => {
-                if (!ctx) return
-                const bond = BigInt(await api.getRequiredBond(job.id, index))
-                await act(() => api.disputeRuling(ctx, job.id, index, reason, bond), 'Bonding your dispute…')
-              },
+              // The bond read happens inside `send` so a failure there is
+              // reported like any other, rather than becoming an unhandled
+              // rejection that leaves the button looking inert.
+              onDispute: (index, reason) =>
+                act(async (c) => {
+                  const bond = BigInt(await api.getRequiredBond(job.id, index))
+                  return api.disputeRuling(c, job.id, index, reason, bond)
+                }, 'Bonding your dispute…'),
               onSettle: (index) =>
-                ctx && act(() => api.settleMilestone(ctx, job.id, index), 'Splitting the escrow on the ruling…'),
+                act((c) => api.settleMilestone(c, job.id, index), 'Splitting the escrow on the ruling…'),
+              getBond: (index) => api.getRequiredBond(job.id, index),
             }}
           />
         </Clause>
@@ -229,15 +298,13 @@ export default function JobDocument() {
             viewer={viewer}
             busy={busy}
             onRuleScope={(request) =>
-              ctx &&
               act(
-                () => api.ruleScope(ctx, job.id, request),
+                (c) => api.ruleScope(c, job.id, request),
                 'Validators are ruling on this against the signed agreement. This takes a few minutes.',
               )
             }
             onChangeOrder={(request, milestones, deadline, total) =>
-              ctx &&
-              act(() => api.openChangeOrder(ctx, job.id, request, milestones, deadline, total), 'Funding the amendment…')
+              act((c) => api.openChangeOrder(c, job.id, request, milestones, deadline, total), 'Funding the amendment…')
             }
           />
         </Clause>
@@ -266,7 +333,7 @@ export default function JobDocument() {
                     <Button
                       busy={busy}
                       disabled={!review.trim()}
-                      onClick={() => ctx && act(() => api.submitReview(ctx, job.id, review.trim()), 'Recording your review…')}
+                      onClick={() => act((c) => api.submitReview(c, job.id, review.trim()), 'Recording your review…')}
                     >
                       Leave it on the record
                     </Button>
@@ -277,25 +344,28 @@ export default function JobDocument() {
           </Clause>
         )}
 
-        <ClosingActions job={job} isClient={isClient} busy={busy} act={act} ctx={ctx} deadlinePassed={deadlinePassed} />
+        <ClosingActions job={job} isClient={isClient} busy={busy} act={act} deadlinePassed={deadlinePassed} />
       </Sheet>
     </div>
   )
 }
+
+type Act = (
+  send: (context: { account: `0x${string}`; provider: EIP1193Provider }) => Promise<`0x${string}`>,
+  note: string,
+) => void
 
 function ClosingActions({
   job,
   isClient,
   busy,
   act,
-  ctx,
   deadlinePassed,
 }: {
   job: Job
   isClient: boolean
   busy: boolean
-  act: (send: () => Promise<`0x${string}`>, note: string) => void
-  ctx: { account: `0x${string}`; provider: any } | null
+  act: Act
   deadlinePassed: boolean
 }) {
   const canCancel = isClient && job.status === 'drafting'
@@ -308,13 +378,13 @@ function ClosingActions({
   return (
     <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-rule pt-6">
       {canCancel && (
-        <Button variant="outline" busy={busy} onClick={() => ctx && act(() => api.cancelJob(ctx, job.id), 'Withdrawing the brief…')}>
+        <Button variant="outline" busy={busy} onClick={() => act((c) => api.cancelJob(c, job.id), 'Withdrawing the brief…')}>
           Withdraw and refund
         </Button>
       )}
       {canExpire && (
         <>
-          <Button variant="outline" busy={busy} onClick={() => ctx && act(() => api.refundExpired(ctx, job.id), 'Returning the escrow…')}>
+          <Button variant="outline" busy={busy} onClick={() => act((c) => api.refundExpired(c, job.id), 'Returning the escrow…')}>
             Return the escrow
           </Button>
           <p className="text-xs text-ink-faint">

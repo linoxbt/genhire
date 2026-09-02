@@ -7,9 +7,23 @@ node_modules/
 artifacts/
 dist/
 .DS_Store
+# Every env file except the committed examples. Vite also loads
+# .env.[mode] and .env.[mode].local, so a bare `.env.local` rule would have
+# let `.env.production` through - the most natural name for a real deploy.
 .env
-.env.local
+.env.*
+!.env.example
+
+# gltest accepts either extension.
 gltest.config.yaml
+gltest.config.yml
+
+# Key material must never be tracked, whatever it is called.
+*.key
+*.pem
+keystore*
+*keystore.json
+secrets*
 
 # Local Netlify folder
 .netlify

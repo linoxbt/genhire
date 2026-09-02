@@ -3,6 +3,9 @@ import json
 
 import pytest
 
+EVIDENCE = json.dumps(["https://example.com/build"])
+ONE_HASH = json.dumps(["a" * 64])
+
 
 # -- posting -----------------------------------------------------------
 
@@ -288,4 +291,159 @@ def test_work_cannot_be_delivered_before_both_sign(h, freelancer, UserError):
     h.draft(job_id)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="while the job is 'sow_drafted'"):
-        h.contract.submit_milestone(job_id, 0, json.dumps(["https://example.com/x"]), "")
+        h.contract.submit_milestone(job_id, 0, json.dumps(["https://example.com/x"]), ONE_HASH, "")
+
+
+# -- acceptance money-safety guards ------------------------------------
+# These three protect the moment the price is fixed and the remainder refunded.
+# They had no test at all, despite the README claiming the suite covered
+# "every guard".
+
+def test_a_proposal_cannot_be_accepted_above_the_escrowed_budget(h, client, freelancer, UserError):
+    """The stored proposal is the source of truth for price; if it could ever
+    exceed escrow, acceptance would set `escrow` above what was funded and the
+    refund arithmetic would underflow."""
+    job_id = h.post(1000)
+    idx = h.propose(job_id, 1000)
+
+    # Tamper with the stored proposal to exceed escrow - the guard must hold
+    # even when the record it reads has been corrupted.
+    import json
+    job = h.contract.jobs[h.module.u256(job_id)]
+    record = json.loads(job.proposals_json[idx])
+    record["price"] = "5000"
+    job.proposals_json[idx] = json.dumps(record)
+
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match="exceeds the escrowed budget"):
+        h.contract.accept_proposal(job_id, idx)
+
+
+def test_accepted_milestones_must_total_the_accepted_price(h, client, UserError):
+    """Price and schedule are stored separately; if they could disagree, escrow
+    and the sum of what can be settled would drift apart."""
+    import json
+    job_id = h.post(1000)
+    idx = h.propose(job_id, 600, 400)
+
+    job = h.contract.jobs[h.module.u256(job_id)]
+    record = json.loads(job.proposals_json[idx])
+    record["price"] = "900"  # no longer equals 600 + 400
+    job.proposals_json[idx] = json.dumps(record)
+
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match="do not total the accepted price"):
+        h.contract.accept_proposal(job_id, idx)
+
+
+def test_the_freelancer_cannot_be_the_client(h, client, UserError):
+    """Self-dealing would let one address post, accept and settle against
+    itself, using the contract as a no-op round trip."""
+    import json
+    job_id = h.post(1000)
+    idx = h.propose(job_id, 1000)
+
+    # Rewrite the proposal so it appears to come from the client themselves.
+    job = h.contract.jobs[h.module.u256(job_id)]
+    record = json.loads(job.proposals_json[idx])
+    record["from"] = client.as_hex
+    job.proposals_json[idx] = json.dumps(record)
+
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match="must differ from the client"):
+        h.contract.accept_proposal(job_id, idx)
+
+
+def test_an_out_of_range_proposal_index_is_rejected(h, client, UserError):
+    job_id = h.post(1000)
+    h.propose(job_id, 1000)
+    h.acting_as(client, 0)
+    for bad in (-1, 5):
+        with pytest.raises(UserError, match="does not exist on this job"):
+            h.contract.accept_proposal(job_id, bad)
+
+
+def test_an_out_of_range_counter_parent_is_rejected(h, client, UserError):
+    job_id = h.post(1000)
+    h.propose(job_id, 1000)
+    h.acting_as(client, 0)
+    with pytest.raises(UserError, match="does not exist on this job"):
+        h.contract.counter_proposal(job_id, 9, "Counter", h.schedule(500))
+
+
+# -- size caps ---------------------------------------------------------
+
+def test_size_caps_are_enforced(h, client, freelancer, UserError):
+    """Every cap the contract advertises, exercised once."""
+    module = h.module
+
+    h.acting_as(client, 1000)
+    with pytest.raises(UserError, match="brief too long"):
+        h.contract.post_job("x" * (module.MAX_BRIEF_CHARS + 1), h.schedule(1000), h.at(86400))
+
+    job_id = h.post(1000)
+    h.acting_as(freelancer, 0)
+    with pytest.raises(UserError, match="approach too long"):
+        h.contract.submit_proposal(job_id, "x" * (module.MAX_APPROACH_CHARS + 1), h.schedule(1000))
+    with pytest.raises(UserError, match="approach must not be empty"):
+        h.contract.submit_proposal(job_id, "   ", h.schedule(1000))
+
+
+def test_the_proposal_limit_is_enforced(h, freelancer, UserError):
+    job_id = h.post(1000)
+    for _ in range(h.module.MAX_PROPOSALS):
+        h.propose(job_id, 1000)
+    h.acting_as(freelancer, 0)
+    with pytest.raises(UserError, match="proposal limit"):
+        h.contract.submit_proposal(job_id, "One more", h.schedule(1000))
+
+
+def test_the_drafter_actually_sees_the_brief_proposal_and_schedule(h, stranger):
+    """Runs the real `_sow_source` body.
+
+    Every other drafting test queues an already-parsed result, so the function
+    that assembles what the drafter is shown never executed. That left the
+    prompt-injection framing and the schedule hand-off completely unverified.
+    """
+    job_id = h.post(600, 400, brief="Build a checkout flow with a confirmation email")
+    idx = h.propose(job_id, 600, 400, approach="Two passes: UI first, then email")
+    h.accept(job_id, idx)
+
+    seen: dict[str, str] = {}
+
+    def run_leader(source_fn):
+        seen["text"] = source_fn()
+        return h.sow_payload(2)
+
+    h.queue_verdict(run_leader)
+    h.acting_as(stranger, 0)
+    h.contract.draft_sow(job_id)
+
+    text = seen["text"]
+    assert "Build a checkout flow with a confirmation email" in text
+    assert "Two passes: UI first, then email" in text
+    assert "600" in text and "400" in text, "the agreed amounts must reach the drafter"
+    assert "untrusted" in text.lower(), "party-written text must be labelled untrusted"
+    assert "authoritative" in text.lower(), "the fixed schedule must be marked authoritative"
+    assert "PREVIOUS SCOPE" not in text, "there is no prior scope on a first draft"
+
+
+def test_a_redraft_carries_the_previous_scope_forward(h, client, stranger):
+    """The amendment continuity path - never executed by any test before."""
+    job_id = h.engage(1000)
+    h.deliver_and_rule(job_id, 0, 100)
+    h.settle(job_id, 0)
+    h.change_order(job_id, 500)
+
+    seen: dict[str, str] = {}
+
+    def run_leader(source_fn):
+        seen["text"] = source_fn()
+        return h.sow_payload(2, scope="Checkout flow plus an admin report")
+
+    h.queue_verdict(run_leader)
+    h.acting_as(stranger, 0)
+    h.contract.draft_sow(job_id)
+
+    assert "PREVIOUS SCOPE" in seen["text"]
+    assert "Deliver the checkout flow" in seen["text"], "the superseded scope must be carried in"

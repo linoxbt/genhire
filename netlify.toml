@@ -48,9 +48,13 @@
     # connection makes clickjacking worth closing off explicitly.
     Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=()"
 
-[context.production.environment]
-  NODE_ENV = "production"
-
+# Deliberately no `NODE_ENV = "production"`. Netlify honours NODE_ENV during
+# its install step, and setting it to production omits devDependencies - which
+# is where vite, typescript, @vitejs/plugin-react and tailwindcss all live, so
+# `tsc -b && vite build` would fail with "vite: not found". Scoped to
+# [context.production] it would have failed *only* on the production branch
+# build, passing on every deploy preview.
+#
 # Deploy previews and branch builds hit the same public networks; nothing here
 # is environment-specific beyond the contract address, which is set as a site
 # environment variable rather than committed.

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getAllJobs } from '../lib/genhire'
+import { getJobsFor } from '../lib/genhire'
 import { isDeployed, useNetwork } from '../lib/network'
 import { formatGen, sameAddress, shortAddress, formatDate } from '../lib/format'
 import type { Job } from '../lib/types'
-import { EmptyState, Label, Skeleton } from '../components/ui'
+import { Callout, EmptyState, Label, Skeleton } from '../components/ui'
 import { CompletionBar, StatusChip, jobTitle } from '../components/bits'
 
 /**
@@ -16,12 +16,37 @@ export default function Profile() {
   const { address = '' } = useParams()
   const network = useNetwork()
   const [jobs, setJobs] = useState<Job[] | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     setJobs(null)
+    setFailed(false)
     if (!isDeployed()) return setJobs([])
-    getAllJobs().then(setJobs).catch(() => setJobs([]))
-  }, [network])
+    let cancelled = false
+    getJobsFor(address)
+      .then((result) => !cancelled && setJobs(result))
+      // An RPC failure is not "you have nothing". Coercing it to an empty list
+      // told a client with live escrow that they had no engagements.
+      .catch((err) => {
+        if (cancelled) return
+        console.error('GenHire: could not read jobs', err)
+        setFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [network, address])
+
+  if (failed) {
+    return (
+      <Callout tone="seal">
+        <strong className="font-medium">Couldn’t read this address’s record.</strong>
+        <p className="mt-0.5">
+          The network didn’t answer. An unread record is not an empty one — reload to try again.
+        </p>
+      </Callout>
+    )
+  }
 
   if (!jobs) {
     return (

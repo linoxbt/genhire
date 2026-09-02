@@ -124,7 +124,7 @@ Integer floor to the freelancer, everything left — the rounding dust included 
 
 Every terminal state is reachable **permissionlessly**: `settle_milestone` and `refund_expired` can
 be called by anyone, and so can `draft_sow` and `adjudicate_milestone`. Escrow must never depend on a
-counterparty still being around and co-operative. Conversely, disputes are capped at 3 rounds per
+counterparty still being around and co-operative. Conversely, a milestone gets 3 adjudication rounds in total — the first ruling plus two appeals — per
 milestone so the process always terminates rather than cycling.
 
 ### The appeal window is a constructor parameter
@@ -203,3 +203,21 @@ spend a whole day's quota in one end-to-end run.
 
 Reads fan out through `mapWithConcurrency` with a small pacing gap, and retry with backoff on
 rate-limit errors specifically — never on genuine failures, which should surface immediately.
+
+
+## 9. Two decisions taken after the first audit
+
+**Evidence is committed, not merely located.** Locking a URL pins where the evidence lives, not what
+is there, and `adjudicate_milestone` re-fetches on every call — including the re-adjudication that
+answers a dispute. Whoever controlled the page could therefore change what was judged between a
+ruling and its appeal, with the bond and the settlement split turning on it. `submit_milestone` now
+takes a sha256 per mutable URL; `_fetch_evidence` re-hashes what it fetched and raises before the
+model sees anything on mismatch. `ipfs://` and `ar://` are exempt: the reference is the hash.
+
+**Rulings are quantised to 5% steps.** An equivalence principle must tolerate some spread between
+validators — they will not independently produce the same percentage to the point. But settlement
+pays a single exact number, so within that tolerance leader selection was deciding real money (up to
+0.1 GEN on a 1 GEN milestone at the old ±10 band). Rounding to a coarse step lets the principle
+demand an *exact* match on the quantised value instead. The rounding is applied both in
+`_parse_milestone_verdict` and again where the figure is stored, because that is the number the
+escrow is split on and it must be on-step whatever produced it.

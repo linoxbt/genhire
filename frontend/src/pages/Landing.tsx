@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAllJobs } from '../lib/genhire'
-import { isDeployed } from '../lib/network'
+import { isDeployed, useNetwork } from '../lib/network'
 import { formatGen } from '../lib/format'
 import type { Job } from '../lib/types'
 import Splash from '../components/landing/Splash'
@@ -21,8 +21,10 @@ interface Stats {
 /** `null` while loading, `false` once we know we could not read the chain. */
 function useStats(): Stats | null | false {
   const [state, setState] = useState<Stats | null | false>(null)
+  const network = useNetwork()
 
   useEffect(() => {
+    setState(null)
     if (!isDeployed()) return setState(false)
     let cancelled = false
     getAllJobs()
@@ -37,11 +39,17 @@ function useStats(): Stats | null | false {
           partial: settled.filter((m) => m.pct > 0 && m.pct < 100).length,
         })
       })
-      .catch(() => !cancelled && setState(false))
+      .catch((err) => {
+        if (cancelled) return
+        console.error('GenHire: could not read protocol stats', err)
+        setState(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+    // Keyed on the network: these figures are per-chain, and without this the
+    // headline numbers keep showing whichever network was selected at mount.
+  }, [network])
 
   return state
 }

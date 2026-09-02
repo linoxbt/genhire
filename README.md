@@ -65,11 +65,11 @@ breakdown, and escrow splits on it.
 | | |
 |---|---|
 | **Live app** | [genhire.netlify.app](https://genhire.netlify.app) |
-| **Contract** | [`contracts/genhire.py`](contracts/genhire.py) — Python / GenVM. One contract, 24 methods, no backend |
+| **Contract** | [`contracts/genhire.py`](contracts/genhire.py) — Python / GenVM. One contract, 25 methods, no backend |
 | **Network** | GenLayer Studio Network — see [Networks](#networks) |
 | **Frontend** | Vite + React 19 + TypeScript + Tailwind v4, a static SPA |
 | **Chain access** | [`genlayer-js`](https://github.com/genlayerlabs/genlayer-js) — no server, no indexer, no database, no mock data |
-| **Tests** | 297 across three suites, plus `genvm-lint` |
+| **Tests** | 324 deterministic (17 direct + 307 in-process), plus 4 live-network tests and `genvm-lint` |
 
 ---
 
@@ -198,7 +198,9 @@ text they never saw. Both signatures move the job to `active`; work cannot begin
 ### 3. Delivery and adjudication
 
 `submit_milestone` delivers one milestone, **in order** (a milestone cannot be delivered until every
-earlier one has settled), before the deadline, with up to 5 evidence URLs. Accepted schemes are
+earlier one has settled), before the deadline, with up to 5 evidence URLs — each committed with a
+sha256 of its content, so a later appeal is judged on the same bytes rather than whatever the page
+says by then. Accepted schemes are
 `https://`, `http://`, `ipfs://` and `ar://`.
 
 `adjudicate_milestone` is **permissionless too**, so a client who dislikes where a ruling is heading
@@ -286,9 +288,9 @@ a sandbox deployment run a full lifecycle in minutes.
 | `accept_proposal(job_id, proposal_idx)` | the offer's addressee | Fixes parties/price/schedule; refunds the unspent budget |
 | `draft_sow(job_id)` | **permissionless** | Runs the drafting round. Also used to re-draft after an amendment |
 | `sign_sow(job_id, sow_hash)` | either party | Hash must match the draft on file. Both signatures activate the job |
-| `submit_milestone(job_id, milestone_idx, evidence_urls_json, notes)` | freelancer | In order, before the deadline, ≤5 URLs |
+| `submit_milestone(job_id, milestone_idx, evidence_urls_json, evidence_hashes_json, notes)` | freelancer | In order, before the deadline, ≤5 URLs. Commits a sha256 per mutable URL so an appeal judges the same bytes |
 | `adjudicate_milestone(job_id, milestone_idx)` | **permissionless** | Rules a completion percentage; also resolves an open dispute's bond |
-| `dispute_ruling(job_id, milestone_idx, reason)` | payable · either party | Bond ≥ 5% of the milestone. Within the window, ≤3 rounds |
+| `dispute_ruling(job_id, milestone_idx, reason)` | payable · either party | Bond ≥ 5% of the milestone, within the appeal window. A milestone gets 3 adjudication rounds in total — the first ruling plus two appeals |
 | `settle_milestone(job_id, milestone_idx)` | **permissionless** | After the window closes undisputed. Splits the escrow |
 | `rule_scope(job_id, request_text)` | either party | `IN_SCOPE` / `OUT_OF_SCOPE`, recorded on the job. Moves no money |
 | `open_change_order(job_id, request_text, milestones_json, new_deadline)` | payable · client | Value must equal the added total. Clears signatures, re-opens drafting |
@@ -363,7 +365,7 @@ A milestone as returned by `get_job`:
 | Evidence URLs per milestone | 5 (4 000 chars each, 16 000 total, fetched live) |
 | Brief / approach / SoW | 8 000 / 6 000 / 12 000 chars |
 | Reason, notes, scope request | 2 000 chars · Review 280 chars |
-| Dispute bond | 5% of the milestone, minimum 1 wei · max 3 rounds |
+| Dispute bond | 5% of the milestone, minimum 1 wei · 3 adjudication rounds (one ruling + two appeals) |
 
 ---
 
@@ -480,7 +482,7 @@ trusting the numbers.
 
 ```bash
 python3 -m venv .venv && ./.venv/bin/pip install genlayer-py genlayer-test pytest
-./.venv/bin/python -m pytest -q                              # 297 tests, ~7s
+./.venv/bin/python -m pytest -q                              # 324 tests, ~8s
 
 uvx --from genvm-linter genvm-lint check contracts/genhire.py
 ```
@@ -488,7 +490,7 @@ uvx --from genvm-linter genvm-lint check contracts/genhire.py
 | Suite | Count | Runs against | Covers | Does **not** cover |
 |---|---|---|---|---|
 | `tests/direct/` | 17 | gltest direct mode — real GenVM semantics | Storage encoding, `u256`/`Address` behaviour, the schema, everything up to `draft_sow` | Anything downstream of the Statement of Work |
-| `tests/unit/` | 280 | `tests/unit/glstub.py`, in-process, verdict injected | The full state machine, every guard, all escrow and bond arithmetic | Storage encoding, gas, validator consensus |
+| `tests/unit/` | 307 | `tests/unit/glstub.py`, in-process, verdict injected | The full state machine, every guard, all escrow and bond arithmetic | Storage encoding, gas, validator consensus |
 | `tests/integration/` | 4 | A live network | The actual LLM-decided outcomes | — (needs a funded key; not run in CI) |
 
 ### The direct-mode limitation, precisely
@@ -508,8 +510,11 @@ the code that moves money — would have had no test at all.
 
 `tests/unit/` closes that gap by importing **the real contract source, unmodified**, against a stubbed
 `genlayer` namespace with the model's answer injected. It is not a reimplementation. One deliberate
-divergence: the stub's `u256` *raises* on a negative rather than wrapping, because any negative
-reaching it is an accounting bug that should surface loudly.
+divergence: the stub's `u256` range-checks at construction. The real `u256` is a `NewType` that
+checks nothing at runtime — the bounds are enforced later by the storage encoder, which raises
+`OverflowError` at write time. Checking earlier catches the same bug with a clearer stack; what it
+must never do is check *less*, so both bounds are enforced. The stub also models a real balance and
+refuses any payout larger than the contract holds.
 
 What it proves is what the contract does **with** a verdict — never that validators would agree on
 one. That claim belongs to `tests/integration/` alone.
@@ -591,7 +596,9 @@ Then set the address in `frontend/.env.local` and in the [Networks](#networks) t
 
 The app is deployed at **[genhire.netlify.app](https://genhire.netlify.app)**.
 
-[`netlify.toml`](netlify.toml) drives the build: base `frontend`, publish `dist`, Node 22, an SPA
+[`netlify.toml`](netlify.toml) drives the build: base `frontend`, publish `frontend/dist` (resolved
+from the repository root, **not** from `base` — a bare `dist` sends the deploy looking in the wrong
+place), Node 22, an SPA
 redirect so `/job/3` does not 404 on a direct load or refresh, immutable caching on Vite's
 fingerprinted `/assets/*` with `must-revalidate` on the HTML entry, and a small set of security
 headers (`nosniff`, `DENY` framing, a strict referrer policy) — a page that connects a wallet is
@@ -656,8 +663,8 @@ reporting success.
 
 **Working and verified**
 
-- Contract complete — 24 methods, `genvm-lint` clean, deployed and byte-verified on Studio Network.
-- 297 tests passing; frontend typechecks and builds.
+- Contract complete — 25 methods, `genvm-lint` clean.
+- 337 tests passing; frontend typechecks and builds.
 - **Live on chain through signature**: post → propose → accept → **draft_sow** → both signatures →
   `active`, with the drafted criteria quoted [above](#why-this-needs-genlayer). The core mechanic is
   proven under real validator consensus.
@@ -671,7 +678,8 @@ reporting success.
 
 **Not started**
 
-- Testnet Asimov deployment (needs a funded deployer) and hosted frontend deployment.
+- Testnet Asimov deployment (needs a funded deployer). The frontend **is** deployed — see the live
+  link at the top.
 
 ---
 

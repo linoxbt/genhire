@@ -36,16 +36,34 @@ class Address:
     def __init__(self, value):
         if isinstance(value, Address):
             self._hex = value._hex
-        elif isinstance(value, bytes):
-            self._hex = "0x" + value.hex()
+            return
+        if isinstance(value, bytes):
+            raw = value
         else:
-            text = str(value).lower()
-            if not text.startswith("0x"):
-                text = "0x" + text
-            self._hex = text
+            text = str(value)
+            if text.startswith("0x") or text.startswith("0X"):
+                text = text[2:]
+            try:
+                raw = bytes.fromhex(text)
+            except ValueError:
+                raise Exception(f"invalid address {value}")
+        # The real SDK rejects anything that is not exactly 20 bytes. Accepting
+        # short or malformed input here would hide a class of bug the chain
+        # catches - notably Address(...) applied to a value read back out of
+        # stored JSON.
+        if len(raw) != 20:
+            raise Exception(f"invalid address {value}")
+        self._hex = "0x" + raw.hex()
 
     @property
     def as_hex(self) -> str:
+        """Lowercase, where the real SDK returns an EIP-55 checksummed string.
+
+        The contract only ever compares `as_hex` against a stored `as_hex`, so
+        it is self-consistent either way - but a test asserting a literal
+        address string is asserting this stub's casing, not the chain's. The
+        direct suite, which uses the real SDK, is what covers that.
+        """
         return self._hex
 
     @property
@@ -62,19 +80,29 @@ class Address:
         return f"Address({self._hex})"
 
 
-class u256(int):
-    """int, but it refuses to hold a negative.
+MAX_U256 = 2**256 - 1
 
-    Real GenVM would wrap or trap here; for a test harness, refusing is the
-    point - any negative reaching this constructor is an accounting bug in the
-    contract, and it should surface loudly rather than silently wrapping to a
-    huge balance.
+
+class u256(int):
+    """A 32-byte unsigned integer, range-checked at construction.
+
+    The real `u256` is `typing.NewType('u256', int)` - at runtime it is the
+    identity function and checks nothing. The range is enforced later, by the
+    storage encoder, which calls `int.to_bytes(32, signed=False)` and raises
+    `OverflowError` on a negative or oversized value at *write* time.
+
+    Checking here is deliberately stricter and earlier: it catches the same bugs
+    with a clearer stack, at the point the bad value is produced rather than
+    whenever it happens to be persisted. What it must not do is under-check, so
+    both bounds are enforced, matching the encoder.
     """
 
     def __new__(cls, value=0):
         number = int(value)
         if number < 0:
-            raise AssertionError(f"u256 underflow: {number}")
+            raise AssertionError(f"u256 underflow: {number} (encoder would raise OverflowError)")
+        if number > MAX_U256:
+            raise AssertionError(f"u256 overflow: {number} (encoder would raise OverflowError)")
         return super().__new__(cls, number)
 
 
@@ -121,15 +149,62 @@ class _Public:
         return fn
 
 
-class _Recipient:
-    def __init__(self, address, ledger):
+class InsufficientBalance(AssertionError):
+    """The contract tried to pay out more than it holds."""
+
+
+class _ExternalRecipient:
+    """An EOA reached through the EVM contract-interface shape.
+
+    Models the real constraint rather than a convenient approximation: an
+    external message always executes on finalization, so the real API accepts
+    no `on` argument. Passing one is a bug, and the stub says so instead of
+    silently swallowing it.
+    """
+
+    def __init__(self, address, gl):
         self._address = address
-        self._ledger = ledger
+        self._gl = gl
+
+    def emit_transfer(self, value, **kwargs):
+        if kwargs:
+            raise TypeError(
+                f"external emit_transfer takes no {list(kwargs)} - external messages "
+                f"always execute on finalization"
+            )
+        amount = int(value)
+        if amount <= 0:
+            raise ValueError("value must be greater than 0 for emit_transfer")
+        # Debited on emit, exactly as the real chain does.
+        if amount > self._gl.balance:
+            raise InsufficientBalance(
+                f"contract tried to send {amount} wei holding only {self._gl.balance}"
+            )
+        self._gl.balance -= amount
+        self._gl.transfers.append({"to": self._address, "value": amount, "on": "finalized"})
+
+
+class _InternalContract:
+    """The IC -> IC form, which is NOT how an EOA is paid.
+
+    `gl.get_contract_at(addr).emit_transfer(...)` addresses another Intelligent
+    Contract. Sending that to a plain account has no receiver, and the value is
+    debited on emit and not returned if the child transaction fails - escrow
+    stranded rather than reverted. That defect shipped here once; the stub now
+    refuses it so a future edit cannot quietly reintroduce it.
+    """
+
+    def __init__(self, address):
+        self._address = address
 
     def emit_transfer(self, value, on="finalized"):
-        if int(value) <= 0:
-            raise ValueError("value must be greater than 0 for emit_transfer")
-        self._ledger.append({"to": self._address, "value": int(value), "on": on})
+        raise AssertionError(
+            "gl.get_contract_at(...).emit_transfer() is the internal IC->IC form and "
+            "cannot pay an EOA. Use the @gl.evm.contract_interface recipient instead."
+        )
+
+    def emit(self, **kwargs):
+        raise AssertionError("internal messages are not used by this contract")
 
 
 class _Vm:
@@ -205,6 +280,22 @@ class _Nondet:
         return self.responses.pop(0)
 
 
+class _Evm:
+    """Stands in for `gl.evm`. `contract_interface` turns a marker class into a
+    factory: call it with an Address to get something you can emit to."""
+
+    def __init__(self, gl):
+        self._gl = gl
+
+    def contract_interface(self, _declaration):
+        gl = self._gl
+
+        def factory(address):
+            return _ExternalRecipient(address, gl)
+
+        return factory
+
+
 class _Gl:
     def __init__(self):
         self.vm = _Vm()
@@ -215,9 +306,14 @@ class _Gl:
         self.nondet = _Nondet()
         self.Contract = _Contract
         self.transfers = []
+        # A real balance, not just a log. Without it nothing could detect the
+        # contract paying out more than it was ever funded - the one invariant
+        # an escrow must never break.
+        self.balance = 0
+        self.evm = _Evm(self)
 
     def get_contract_at(self, address):
-        return _Recipient(address, self.transfers)
+        return _InternalContract(address)
 
 
 def install():
