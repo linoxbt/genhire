@@ -234,3 +234,12 @@ pays a single exact number, so within that tolerance leader selection was decidi
 demand an *exact* match on the quantised value instead. The rounding is applied both in
 `_parse_milestone_verdict` and again where the figure is stored, because that is the number the
 escrow is split on and it must be on-step whatever produced it.
+
+The cost of that strictness showed up on chain and is worth stating. Where the evidence is
+unambiguous, validators converge easily: a milestone delivered with a placeholder page was ruled 0%
+by agreement, first time. Where the evidence is genuinely arguable, they may land on adjacent
+buckets and the transaction ends `UNDETERMINED` rather than recording a ruling. That is a safe
+failure - the milestone stays `submitted`, nothing is paid, and adjudication is permissionless so
+anyone can retry into a fresh validator set - but it does mean a borderline delivery can need more
+than one attempt to settle. The alternative, a tolerance band, buys easier consensus by letting
+leader selection decide the split, which is the thing this design refuses to do.

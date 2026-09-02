@@ -671,10 +671,15 @@ reporting success.
 - **The whole lifecycle is proven on chain**: post → propose → accept → **draft_sow** → both
   signatures → deliver → adjudicate → settle, under real validator consensus. The drafted criteria
   are quoted [above](#why-this-needs-genlayer).
-- **Settlement moves real GEN.** A milestone ruled at 0 per cent against placeholder evidence paid
-  the freelancer nothing and returned 0.005 GEN to the client, with `paid + refunded == amount`
-  holding and the escrow drawn down to match. The ruling itself was substantive: six criteria, each
-  marked unmet with reasoning citing the actual page.
+- **Settlement moves real GEN, proportionally.** Two milestones on the same job settled from real
+  rulings. One delivered with a placeholder page was ruled 0% and returned the whole 0.005 GEN to
+  the client. The other, delivered with a well-known open-source email template, was ruled **5%** and
+  split 0.000150 GEN to the freelancer against 0.002850 GEN back to the client. `paid + refunded ==
+  amount` held on both, and the escrow drew down to match.
+- **The adjudication is substantive, not a rubber stamp.** It marked all six criteria unmet on the
+  placeholder page, and on the email template it identified the evidence as public boilerplate
+  "with no customisation for order data" and credited it 5% rather than being persuaded by
+  something that merely looked like a deliverable.
 
 **Not yet proven on chain**
 

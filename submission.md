@@ -124,7 +124,9 @@ percentage — that invariant is asserted across the whole 0–100 range in the 
 
 **Be straight about scope if asked.** The full lifecycle — post, propose, accept, draft, sign,
 deliver, adjudicate, settle — is now proven on chain under real validator consensus, with settlement
-moving GEN and `paid + refunded == amount` holding against a real ruling. What is *not* proven is
+moving GEN proportionally: one milestone ruled 0% returned the full amount to the client, another
+ruled 5% split 0.000150 GEN to the freelancer against 0.002850 GEN refunded, with
+`paid + refunded == amount` holding on both. What is *not* proven is
 `tests/integration/`, which is written but unrun because it needs a raw private key. Do not claim
 more than that; a steward following the how-to will find out either way, and being the one who said
 so first is worth more than the claim.
