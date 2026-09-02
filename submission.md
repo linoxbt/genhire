@@ -80,7 +80,7 @@ Concretely: get_sow returns acceptance criteria the contract wrote, not ones eit
 **Contract link (optional field, but worth filling):**
 
 ```
-https://explorer-studio.genlayer.com/address/0xa0074bb806b5bA67684c272d342339A56Bf57713
+https://explorer-studio.genlayer.com/address/0x945B25004081DaD5181B495c48722d96cBf307Bd
 ```
 
 ---
@@ -122,12 +122,12 @@ percentage — that invariant is asserted across the whole 0–100 range in the 
   validators, but settlement pays one exact number — so inside that tolerance, leader selection was
   deciding real money. Rounding to a coarse step lets the principle demand an exact match instead.
 
-**Be straight about scope if asked.** Delivery → adjudication → settlement has been exercised
-end-to-end in the test suites and is running live at time of writing, but the on-chain settlement
-run had not completed when this text was drafted — Studio's daily request quota was exhausted. The
-drafting and signature steps *are* proven on chain. Do not claim more than that; a steward following
-the how-to will find out either way, and being the one who said so first is worth more than the
-claim.
+**Be straight about scope if asked.** The full lifecycle — post, propose, accept, draft, sign,
+deliver, adjudicate, settle — is now proven on chain under real validator consensus, with settlement
+moving GEN and `paid + refunded == amount` holding against a real ruling. What is *not* proven is
+`tests/integration/`, which is written but unrun because it needs a raw private key. Do not claim
+more than that; a steward following the how-to will find out either way, and being the one who said
+so first is worth more than the claim.
 
 **Studio only.** Asimov rejects a contract this size (`BlockPubdataLimitReached`; the ceiling
 measures between 52 and 55 kB against ~73 kB of source). Studio takes the source unmodified, which

@@ -533,7 +533,7 @@ with `genlayer code <address>` before trusting it.
 
 | Network | Chain | Address | Appeal window |
 |---|---|---|---|
-| Studio Network | 61999 | `0xa0074bb806b5bA67684c272d342339A56Bf57713` | 300s |
+| Studio Network | 61999 | `0x945B25004081DaD5181B495c48722d96cBf307Bd` | 300s |
 
 GenHire targets **Studio only**: gasless, with a built-in faucet (the 💧 button at
 [studio.genlayer.com](https://studio.genlayer.com)), and it takes the contract source unmodified — so
@@ -559,7 +559,7 @@ npm run dev
 `.env.local`:
 
 ```bash
-VITE_CONTRACT_ADDRESS_STUDIONET="0x65BE4DE0A604AB9b298BAb2e8715b21b843406f0"
+VITE_CONTRACT_ADDRESS_STUDIONET="0x945B25004081DaD5181B495c48722d96cBf307Bd"
 VITE_REOWN_PROJECT_ID=""      # free from https://cloud.reown.com
 ```
 
@@ -575,7 +575,7 @@ never called, and the header renders a wallet button on every route.
 balances either side of settlement:
 
 ```bash
-GENHIRE_ADDRESS=0x65BE… GENHIRE_KEYSTORE_PASSWORD=… node scripts/smoke.mjs
+GENHIRE_ADDRESS=0x945B… GENHIRE_KEYSTORE_PASSWORD=… node scripts/smoke.mjs
 ```
 
 It uses `genlayer-js` rather than the CLI because **`genlayer write` hardcodes `value: 0n`** and
@@ -667,22 +667,23 @@ reporting success.
 **Working and verified**
 
 - Contract complete — 25 methods, `genvm-lint` clean.
-- 338 tests passing; frontend typechecks and builds.
-- **Live on chain through signature**: post → propose → accept → **draft_sow** → both signatures →
-  `active`, with the drafted criteria quoted [above](#why-this-needs-genlayer). The core mechanic is
-  proven under real validator consensus.
+- 339 tests passing; frontend typechecks and builds.
+- **The whole lifecycle is proven on chain**: post → propose → accept → **draft_sow** → both
+  signatures → deliver → adjudicate → settle, under real validator consensus. The drafted criteria
+  are quoted [above](#why-this-needs-genlayer).
+- **Settlement moves real GEN.** A milestone ruled at 0 per cent against placeholder evidence paid
+  the freelancer nothing and returned 0.005 GEN to the client, with `paid + refunded == amount`
+  holding and the escrow drawn down to match. The ruling itself was substantive: six criteria, each
+  marked unmet with reasoning citing the actual page.
 
 **Not yet proven on chain**
 
-- **Delivery → adjudication → settlement.** The live run stopped when Studio's 5 000-request daily
-  quota was exhausted (by the pre-backoff poller — since fixed). Everything needed is deployed;
-  re-run `scripts/smoke.mjs` once the quota resets.
 - `tests/integration/` is written but unrun — it needs a raw private key in a gitignored config.
 
 **Deployed**
 
-- Contract live on Studio at `0xa0074bb806b5bA67684c272d342339A56Bf57713`, verified by reading a view
-  that only exists in the post-audit code.
+- Contract live on Studio at `0x945B25004081DaD5181B495c48722d96cBf307Bd`, byte-verified against
+  `contracts/genhire.py` with `genlayer code`.
 - Frontend live at [genhire.netlify.app](https://genhire.netlify.app), pointed at that contract.
 
 ---
