@@ -38,11 +38,36 @@ async function load(name) {
 const reader = createClient({ chain: studionet });
 
 async function balance(address) {
-  return reader.getBalance({ address });
+  return rpc("getBalance", () => reader.getBalance({ address }));
+}
+
+/**
+ * Any RPC call, retried through a rate limit.
+ *
+ * Studio's daily bucket refills as old requests age out, so once it is spent
+ * the endpoint yields roughly one request every few tens of seconds rather than
+ * refusing outright for a day. A run that dies on the first 429 cannot make
+ * progress through that; one that waits for the server's own `retry_after` can,
+ * slowly. Any other error is thrown immediately - a genuine failure should not
+ * be retried into a long silence.
+ */
+async function rpc(label, fn, { attempts = 40 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const text = String(error?.details ?? error?.message ?? "");
+      if (!/rate limit|429/i.test(text) || attempt >= attempts) throw error;
+      const after = Number(error?.cause?.data?.retry_after_seconds ?? 0);
+      const waitMs = Math.min(Math.max(after, 15), 120) * 1000;
+      process.stdout.write(`  [rate limited on ${label}; waiting ${waitMs / 1000}s]\n`);
+      await sleep(waitMs);
+    }
+  }
 }
 
 async function read(functionName, args = []) {
-  return reader.readContract({ address: CONTRACT, functionName, args });
+  return rpc(functionName, () => reader.readContract({ address: CONTRACT, functionName, args }));
 }
 
 /**
@@ -54,7 +79,9 @@ async function read(functionName, args = []) {
  */
 async function send(account, functionName, args = [], value = 0n, { label } = {}) {
   const client = createClient({ chain: studionet, account });
-  const hash = await client.writeContract({ address: CONTRACT, functionName, args, value });
+  const hash = await rpc(functionName, () =>
+    client.writeContract({ address: CONTRACT, functionName, args, value }),
+  );
   process.stdout.write(`  ${label ?? functionName} → ${hash.slice(0, 12)}… `);
 
   // Back off as the wait lengthens. A flat 4s poll over a 10-minute budget is
@@ -68,7 +95,7 @@ async function send(account, functionName, args = [], value = 0n, { label } = {}
     await sleep(wait);
     wait = Math.min(wait * 1.5, 20000);
     try {
-      tx = await reader.getTransaction({ hash });
+      tx = await rpc(`${functionName} status`, () => reader.getTransaction({ hash }), { attempts: 8 });
     } catch {
       continue;
     }

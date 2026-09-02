@@ -533,11 +533,20 @@ with `genlayer code <address>` before trusting it.
 
 | Network | Chain | Address | Appeal window |
 |---|---|---|---|
-| Studio Network | 61999 | `0xF56ea607eD83bd4292cb334B9F9322a9b17dBEE7` | 48h — production default |
-| Studio Network | 61999 | `0x65BE4DE0A604AB9b298BAb2e8715b21b843406f0` | 300s — sandbox; the app points here |
-| Testnet Asimov | 4221 | not yet deployed | — |
+| Studio Network | 61999 | `0xa0074bb806b5bA67684c272d342339A56Bf57713` | 300s — sandbox; the app points here |
+| Testnet Asimov | 4221 | **not deployable at this size** — see below | — |
 
-Both Studio deployments were byte-verified against `contracts/genhire.py` after deploying. Studio is
+**Asimov cannot host this contract at its current size.** A deploy is rejected with
+`BlockPubdataLimitReached`. Binary-searching with padded dummy contracts puts the ceiling between
+52,000 and 55,000 bytes; `contracts/genhire.py` is ~73 kB, and ~55 kB even with every comment and
+docstring stripped — so it is over the limit either way, and closing the gap would mean cutting real
+code rather than prose. Studio has no such limit (it is gasless, and `BlockPubdataLimitReached` is a
+zkSync-era rollup constraint), and accepts the full source unmodified.
+
+Two related traps if you deploy a large contract yourself: `deployContract` in `genlayer-js`
+**silently drops a `gas` option**, and when `estimateTransactionGas` fails it falls back to a flat
+200,000 gas — well below the ~1.17M a 73 kB contract needs in intrinsic calldata cost alone. The
+resulting error says "intrinsic gas too low", which points away from the real cause. Studio is
 gasless and has a built-in faucet (the 💧 button at [studio.genlayer.com](https://studio.genlayer.com));
 Asimov funds come from [testnet-faucet.genlayer.foundation](https://testnet-faucet.genlayer.foundation).
 
