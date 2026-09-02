@@ -165,14 +165,28 @@ async function main() {
   const jobId = Number(jobIds[jobIds.length - 1]);
   console.log(`   job #${jobId}\n`);
 
-  console.log("2. freelancer proposes, client accepts");
+  console.log("2. freelancer proposes under budget, client accepts");
+  // Deliberately below the posted budget. Proposing the exact amounts would make
+  // the acceptance refund zero, and `_pay` returns early on zero - so the run
+  // would sail past the first payout without ever exercising it. Coming in under
+  // budget means acceptance itself moves GEN, which is the earliest point this
+  // script can demonstrate the payout path at all.
+  const P1 = 5n * GEN / 1000n;   // 0.005 GEN
+  const P2 = 3n * GEN / 1000n;   // 0.003 GEN
+  const expectedRefund = budget - (P1 + P2);
+
   await send(freelancer, "submit_proposal", [
     jobId,
     "I'll build the cart and payment step against your existing API first, then wire the confirmation email.",
-    schedule(["Cart and payment UI", M1], ["Confirmation email", M2]),
+    schedule(["Cart and payment UI", P1], ["Confirmation email", P2]),
   ]);
+
+  const beforeAccept = await balance(client.address);
   await send(client, "accept_proposal", [jobId, 0]);
-  console.log();
+  const afterAccept = await balance(client.address);
+  console.log(`   unspent budget refunded on acceptance: expected ${gen(expectedRefund)}`);
+  console.log(`   client balance moved by ${gen(afterAccept - beforeAccept)} (gas deducted separately)`);
+  console.log(`   escrow now ${gen(BigInt((await read("get_job", [jobId])).escrow))}\n`);
 
   console.log("3. the contract drafts the Statement of Work (validator consensus)");
   await send(client, "draft_sow", [jobId], 0n, { label: "draft_sow" });
@@ -216,11 +230,11 @@ async function main() {
 
   const after = { client: await balance(client.address), freelancer: await balance(freelancer.address) };
   const settled = (await read("get_job", [jobId])).milestones[0];
-  console.log(`\n   milestone amount : ${gen(M1)}`);
+  console.log(`\n   milestone amount : ${gen(P1)}`);
   console.log(`   ruled completion : ${settled.pct}%`);
   console.log(`   paid to freelancer: ${gen(BigInt(settled.paid))}`);
   console.log(`   refunded to client: ${gen(BigInt(settled.refunded))}`);
-  console.log(`   paid + refunded == amount: ${BigInt(settled.paid) + BigInt(settled.refunded) === M1}`);
+  console.log(`   paid + refunded == amount: ${BigInt(settled.paid) + BigInt(settled.refunded) === P1}`);
   console.log(`\n   freelancer balance ${gen(before.freelancer)} → ${gen(after.freelancer)} (delta ${gen(after.freelancer - before.freelancer)})`);
   console.log(`   client     balance ${gen(before.client)} → ${gen(after.client)} (delta ${gen(after.client - before.client)})`);
   console.log(`\n   job status: ${(await read("get_job", [jobId])).status}`);
