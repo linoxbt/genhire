@@ -29,12 +29,12 @@ const STEPS = [
   {
     verb: 'Deliver',
     method: 'submit_milestone',
-    body: 'The freelancer submits evidence for one milestone, in order, before the deadline. Validators will fetch those URLs themselves.',
+    body: 'The freelancer submits evidence for one milestone, in order, before the deadline. Validators read those URLs during the transaction and store what they find.',
   },
   {
     verb: 'Adjudicate',
     method: 'adjudicate_milestone',
-    body: 'Independent validators judge the evidence against the criteria and return a completion percentage with a per-criterion breakdown. Permissionless, so a ruling cannot be withheld.',
+    body: 'Independent validators judge the stored evidence against the criteria and return a completion percentage with a per-criterion breakdown. Permissionless, so a ruling cannot be withheld.',
   },
   {
     verb: 'Settle',
