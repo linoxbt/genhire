@@ -267,9 +267,12 @@ def test_the_real_adjudication_body_fetches_evidence_and_parses_the_verdict(h, c
     job_id = h.engage(1000)
     h.submit(job_id, 0, content="The cart page renders and payment succeeds.")
 
+    # exec_prompt(response_format="json") hands back a parsed object, so this
+    # is decoded before the contract sees it - the fenced-text path belongs to
+    # the prompt principles and is covered in test_parsing.py.
     h.gl.nondet.responses.append(
-        '```json\n{"completion_pct": "82%", "reasoning": "Most criteria met",'
-        ' "criteria": [{"criterion": "cart renders", "met": "yes", "note": "seen"}]}\n```'
+        '{"completion_pct": "82%", "reasoning": "Most criteria met",'
+        ' "criteria": [{"criterion": "cart renders", "met": "yes", "note": "seen"}]}'
     )
     h.queue_verdict(lambda leader_fn: leader_fn())
     h.acting_as(client, 0)

@@ -164,3 +164,23 @@ def test_a_drafted_sow_normalises_its_lists(h):
     assert sow["assumptions"] == ["a single string, not a list"]
     assert sow["exclusions"] == []
     assert sow["milestones"][0]["criteria"] == ["one", "two"]
+
+
+def test_a_parsed_object_passes_through_untouched(h):
+    """The regression that made adjudication impossible on chain.
+
+    `exec_prompt(response_format="json")` returns an already-parsed object, not
+    text. Running str() over it yields a Python repr with single-quoted keys,
+    which is not JSON and fails at the first key - deterministically, on every
+    validator, so no ruling could ever be recorded.
+    """
+    verdict = {"completion_pct": 80, "reasoning": "met", "criteria": []}
+    assert h.module._extract_json_blob(verdict, "milestone verdict") is verdict
+
+    listed = [{"a": 1}]
+    assert h.module._extract_json_blob(listed, "anything") is listed
+
+    # A Python repr of that same dict is what the old code produced, and it must
+    # still be rejected rather than silently half-parsed.
+    with pytest.raises(Exception):
+        h.module._extract_json_blob(str(verdict), "milestone verdict")

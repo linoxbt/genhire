@@ -204,10 +204,19 @@ def _clip(text: str, limit: int) -> str:
 def _extract_json_blob(raw, what: str):
     """Pull the first complete JSON value out of an LLM response.
 
-    LLM output is never fully controllable even under a format instruction, so
-    this slices between the outermost braces/brackets, strips trailing commas,
-    and fails closed rather than guessing at a partial parse.
+    `exec_prompt(..., response_format="json")` hands back an already-parsed
+    object, so the common case is simply to pass it through. Calling str() on it
+    would produce a Python repr - single-quoted keys - which is not JSON and
+    fails to parse at the first key, every time.
+
+    The text path remains for the prompt principles, which return the leader's
+    own generated text. LLM output is never fully controllable even under a
+    format instruction, so that path slices between the outermost
+    braces/brackets, strips trailing commas, and fails closed rather than
+    guessing at a partial parse.
     """
+    if isinstance(raw, (dict, list)):
+        return raw
     text = str(raw).strip()
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z]*\s*", "", text)

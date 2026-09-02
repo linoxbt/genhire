@@ -287,10 +287,22 @@ class _Nondet:
         self.responses = []
 
     def exec_prompt(self, prompt, response_format=None):
+        """Mirrors the real return type, which is what makes this worth having.
+
+        With `response_format="json"` GenVM hands back an *already-parsed*
+        object, not text. A stub that returned the queued string instead let a
+        contract calling str() on it pass every test and fail deterministically
+        on chain, so queued JSON is decoded here before it is handed over.
+        """
         self.prompts.append(prompt)
         if not self.responses:
             raise AssertionError("no queued exec_prompt response")
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if response_format == "json" and isinstance(response, str):
+            import json as _json
+
+            return _json.loads(response)
+        return response
 
 
 class _Evm:
