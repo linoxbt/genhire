@@ -148,8 +148,18 @@ async function main() {
   const budget = M1 + M2;
   const deadline = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
 
+  // Resume support. Three lifecycle runs have been lost to a spent RPC quota or
+  // a session ending, each time discarding transactions that had already
+  // succeeded. Under a spent daily bucket Studio yields roughly one request every
+  // 15-30s, so a run that cannot pick up where it left off may never finish.
+  // Pass GENHIRE_JOB_ID to rejoin an existing job; every step below re-reads
+  // state and skips itself if its effect is already on chain.
+  const RESUME = process.env.GENHIRE_JOB_ID ? Number(process.env.GENHIRE_JOB_ID) : null;
+  const done = (label) => console.log(`  ${label}: already on chain, skipping`);
+
   console.log("1. client posts a funded brief");
-  await send(
+  if (RESUME) done("post_job");
+  else await send(
     client,
     "post_job",
     [
@@ -161,9 +171,13 @@ async function main() {
     budget,
     { label: "post_job" },
   );
-  const jobIds = await read("list_jobs");
-  const jobId = Number(jobIds[jobIds.length - 1]);
+  let jobId = RESUME;
+  if (jobId === null) {
+    const jobIds = await read("list_jobs");
+    jobId = Number(jobIds[jobIds.length - 1]);
+  }
   console.log(`   job #${jobId}\n`);
+  let state = await read("get_job", [jobId]);
 
   console.log("2. freelancer proposes under budget, client accepts");
   // Deliberately below the posted budget. Proposing the exact amounts would make
@@ -175,21 +189,28 @@ async function main() {
   const P2 = 3n * GEN / 1000n;   // 0.003 GEN
   const expectedRefund = budget - (P1 + P2);
 
-  await send(freelancer, "submit_proposal", [
-    jobId,
-    "I'll build the cart and payment step against your existing API first, then wire the confirmation email.",
-    schedule(["Cart and payment UI", P1], ["Confirmation email", P2]),
-  ]);
+  // `awaiting_proposals` is the only status from which a proposal is still due.
+  if (state.status === "awaiting_proposals" && (state.proposals ?? []).length === 0) {
+    await send(freelancer, "submit_proposal", [
+      jobId,
+      "I'll build the cart and payment step against your existing API first, then wire the confirmation email.",
+      schedule(["Cart and payment UI", P1], ["Confirmation email", P2]),
+    ]);
+  } else done("submit_proposal");
 
-  const beforeAccept = await balance(client.address);
-  await send(client, "accept_proposal", [jobId, 0]);
-  const afterAccept = await balance(client.address);
-  console.log(`   unspent budget refunded on acceptance: expected ${gen(expectedRefund)}`);
-  console.log(`   client balance moved by ${gen(afterAccept - beforeAccept)} (gas deducted separately)`);
-  console.log(`   escrow now ${gen(BigInt((await read("get_job", [jobId])).escrow))}\n`);
+  if (state.status === "awaiting_proposals") {
+    const beforeAccept = await balance(client.address);
+    await send(client, "accept_proposal", [jobId, 0]);
+    const afterAccept = await balance(client.address);
+    console.log(`   unspent budget refunded on acceptance: expected ${gen(expectedRefund)}`);
+    console.log(`   client balance moved by ${gen(afterAccept - beforeAccept)} (gas deducted separately)`);
+  } else done("accept_proposal");
+  state = await read("get_job", [jobId]);
+  console.log(`   escrow now ${gen(BigInt(state.escrow))}\n`);
 
   console.log("3. the contract drafts the Statement of Work (validator consensus)");
-  await send(client, "draft_sow", [jobId], 0n, { label: "draft_sow" });
+  if (Number(state.sow_version ?? 0) > 0) done("draft_sow");
+  else await send(client, "draft_sow", [jobId], 0n, { label: "draft_sow" });
   const sow = await read("get_sow", [jobId]);
   console.log(`   scope: ${String(sow.scope).slice(0, 200)}`);
   for (const [i, m] of (sow.milestones ?? []).entries()) {
@@ -200,12 +221,18 @@ async function main() {
 
   console.log("4. both parties sign that exact text");
   const job = await read("get_job", [jobId]);
-  await send(client, "sign_sow", [jobId, job.sow_hash]);
-  await send(freelancer, "sign_sow", [jobId, job.sow_hash]);
-  console.log(`   status: ${(await read("get_job", [jobId])).status}\n`);
+  // A signature is recorded as the hash the party signed, so a non-empty field
+  // means that side is already bound to this exact text.
+  if (job.client_signed_hash) done("sign_sow (client)");
+  else await send(client, "sign_sow", [jobId, job.sow_hash]);
+  if (job.freelancer_signed_hash) done("sign_sow (freelancer)");
+  else await send(freelancer, "sign_sow", [jobId, job.sow_hash]);
+  state = await read("get_job", [jobId]);
+  console.log(`   status: ${state.status}\n`);
 
   console.log("5. freelancer delivers milestone 1");
-  await send(freelancer, "submit_milestone", [
+  if (state.milestones[0].status !== "pending") done("submit_milestone");
+  else await send(freelancer, "submit_milestone", [
     jobId,
     0,
     JSON.stringify([process.env.GENHIRE_EVIDENCE_URL ?? "https://example.com"]),
@@ -216,7 +243,23 @@ async function main() {
   console.log();
 
   console.log("6. validators adjudicate it (validator consensus)");
-  await send(client, "adjudicate_milestone", [jobId, 0], 0n, { label: "adjudicate_milestone" });
+  // A verdict that parses but is off-schema rolls the transaction back, leaving
+  // the milestone untouched - and adjudication is permissionless, so retrying is
+  // safe and costs nothing but a round. Deliberately not handled in the contract:
+  // a repair pass there would have masked the parsed-object bug this run exists
+  // to prove is fixed.
+  state = await read("get_job", [jobId]);
+  if (state.milestones[0].status === "submitted") {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await send(client, "adjudicate_milestone", [jobId, 0], 0n, { label: "adjudicate_milestone" });
+        break;
+      } catch (error) {
+        if (!/LLM_ERROR/.test(String(error.message)) || attempt >= 3) throw error;
+        console.log(`   attempt ${attempt}: model returned an unusable verdict, retrying`);
+      }
+    }
+  } else done("adjudicate_milestone");
   const ruled = await read("get_job", [jobId]);
   const m0 = ruled.milestones[0];
   console.log(`   completion: ${m0.pct}%`);
@@ -225,10 +268,21 @@ async function main() {
   console.log();
 
   const window = Number(await read("get_appeal_window_seconds"));
+  const already = ruled.milestones[0].status === "settled";
+  // On a resume the ruling may be minutes old, so wait out only what is left of
+  // the window rather than the whole of it again.
+  const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - Number(m0.ruled_at ?? 0));
+  const remaining = already ? 0 : Math.max(0, window - elapsed) + 15;
   console.log(`7. waiting out the ${window}s appeal window, then settling`);
+  if (remaining > 0) console.log(`   ${remaining}s left to wait (ruled ${elapsed}s ago)`);
+
   const before = { client: await balance(client.address), freelancer: await balance(freelancer.address) };
-  await sleep((window + 15) * 1000);
-  await send(client, "settle_milestone", [jobId, 0], 0n, { label: "settle_milestone" });
+  if (already) {
+    done("settle_milestone");
+  } else {
+    await sleep(remaining * 1000);
+    await send(client, "settle_milestone", [jobId, 0], 0n, { label: "settle_milestone" });
+  }
 
   const after = { client: await balance(client.address), freelancer: await balance(freelancer.address) };
   const settled = (await read("get_job", [jobId])).milestones[0];
