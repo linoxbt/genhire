@@ -256,12 +256,25 @@ class _EqPrinciple:
     def prompt_comparative(self, fn, principle=""):
         return self._next(fn, "comparative", {"principle": principle})
 
+    def strict_eq(self, fn):
+        """Unlike the prompt principles there is no model here, so the leader
+        body is simply run. Tests get the real `_fetch_evidence` - its
+        budgeting, its truncation and its all-sources-failed guard - rather than
+        a queued stand-in."""
+        self.calls.append({"kind": "strict_eq"})
+        return fn()
+
 
 class _Web:
     def __init__(self):
         self.pages = {}
+        # Counts every render attempt. Adjudication must never fetch: it reads
+        # the snapshot stored at submission, and a test asserts this does not
+        # move across a ruling.
+        self.fetches = 0
 
     def render(self, url, mode="text"):
+        self.fetches += 1
         if url in self.pages:
             return self.pages[url]
         raise RuntimeError(f"no page registered for {url}")

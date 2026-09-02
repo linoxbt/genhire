@@ -63,7 +63,7 @@ one sitting rather than two days.
 | 06 | Let the contract draft the agreement | Press **Draft the agreement**. Validators write the Statement of Work — scope, assumptions, exclusions, and one list of acceptance criteria per milestone. This is a real LLM consensus round: allow a few minutes. Anyone can trigger it, so neither side can stall. |
 | 07 | Read what it wrote | Read clause 3. The criteria were written by the contract from your brief and the accepted proposal — neither party typed them. |
 | 08 | Sign it, both sides | Sign on wallet A, then wallet B. Each signature submits the hash of that exact text, so nobody can be bound to a draft they were not shown. The job becomes **In force**. |
-| 09 | Deliver a milestone | On wallet B, deliver milestone 1 with a public URL as evidence. The app hashes the page content and commits it, so a later appeal is judged on the same bytes. |
+| 09 | Deliver a milestone | On wallet B, deliver milestone 1 with a public URL as evidence. Validators read the page during this transaction and store the text, so a later appeal is judged on the same bytes. |
 | 10 | Adjudicate | Press **Request adjudication**. Validators fetch the evidence and return a completion percentage with a per-criterion breakdown. Another real consensus round — a few minutes. |
 | 11 | Settle | Wait out the 300-second appeal window, then press **Settle**. The escrow splits on the ruled percentage: the freelancer is paid `amount × pct ÷ 100` and the client refunded the remainder. |
 
@@ -113,11 +113,11 @@ percentage — that invariant is asserted across the whole 0–100 range in the 
 
 **Two design decisions a reviewer may probe:**
 
-- *Evidence is content-committed.* Adjudication re-fetches on every call, including the appeal — so
-  without a commitment, whoever controls the page could change what is judged between a ruling and
-  its dispute. Delivery therefore submits a sha256 per mutable URL, and a mismatch fails
-  deterministically before the model sees anything. `ipfs://` and `ar://` are exempt: the reference
-  is the hash.
+- *Evidence is snapshotted at delivery.* If adjudication re-fetched on every call, including the
+  appeal, whoever controls the page could change what is judged between a ruling and its dispute.
+  Delivery is therefore a consensus round of its own: the contract fetches each URL once and stores
+  the text on the milestone, and every later ruling reads that snapshot instead of the live page.
+  The appeal cannot judge different bytes because there is only one copy of them.
 - *Rulings are quantised to 5% steps.* An equivalence principle has to tolerate a spread between
   validators, but settlement pays one exact number — so inside that tolerance, leader selection was
   deciding real money. Rounding to a coarse step lets the principle demand an exact match instead.

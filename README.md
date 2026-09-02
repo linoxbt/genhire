@@ -198,14 +198,15 @@ text they never saw. Both signatures move the job to `active`; work cannot begin
 ### 3. Delivery and adjudication
 
 `submit_milestone` delivers one milestone, **in order** (a milestone cannot be delivered until every
-earlier one has settled), before the deadline, with up to 5 evidence URLs — each committed with a
-sha256 of its content, so a later appeal is judged on the same bytes rather than whatever the page
-says by then. Accepted schemes are
-`https://`, `http://`, `ipfs://` and `ar://`.
+earlier one has settled), before the deadline, with up to 5 evidence URLs. Accepted schemes are
+`https://`, `http://`, `ipfs://` and `ar://`. Delivery is itself a consensus round: validators fetch
+each URL during the transaction and **store the text on the milestone**, so what is judged is what
+was delivered.
 
 `adjudicate_milestone` is **permissionless too**, so a client who dislikes where a ruling is heading
-cannot simply withhold it. Validators fetch the evidence themselves and return a completion
-percentage, a per-criterion breakdown, and reasoning.
+cannot simply withhold it. It reads the stored snapshot rather than re-fetching, and returns a
+completion percentage, a per-criterion breakdown, and reasoning. A first ruling and every appeal
+therefore judge byte-identical evidence: a page that changes after delivery cannot move the split.
 
 ### 4. Disputes
 
@@ -288,7 +289,7 @@ a sandbox deployment run a full lifecycle in minutes.
 | `accept_proposal(job_id, proposal_idx)` | the offer's addressee | Fixes parties/price/schedule; refunds the unspent budget |
 | `draft_sow(job_id)` | **permissionless** | Runs the drafting round. Also used to re-draft after an amendment |
 | `sign_sow(job_id, sow_hash)` | either party | Hash must match the draft on file. Both signatures activate the job |
-| `submit_milestone(job_id, milestone_idx, evidence_urls_json, evidence_hashes_json, notes)` | freelancer | In order, before the deadline, ≤5 URLs. Commits a sha256 per mutable URL so an appeal judges the same bytes |
+| `submit_milestone(job_id, milestone_idx, evidence_urls_json, notes)` | freelancer | In order, before the deadline, ≤5 URLs. Fetches and stores the evidence text, so an appeal judges the same bytes |
 | `adjudicate_milestone(job_id, milestone_idx)` | **permissionless** | Rules a completion percentage; also resolves an open dispute's bond |
 | `dispute_ruling(job_id, milestone_idx, reason)` | payable · either party | Bond ≥ 5% of the milestone, within the appeal window. A milestone gets 3 adjudication rounds in total — the first ruling plus two appeals |
 | `settle_milestone(job_id, milestone_idx)` | **permissionless** | After the window closes undisputed. Splits the escrow |
@@ -666,7 +667,7 @@ reporting success.
 **Working and verified**
 
 - Contract complete — 25 methods, `genvm-lint` clean.
-- 337 tests passing; frontend typechecks and builds.
+- 338 tests passing; frontend typechecks and builds.
 - **Live on chain through signature**: post → propose → accept → **draft_sow** → both signatures →
   `active`, with the drafted criteria quoted [above](#why-this-needs-genlayer). The core mechanic is
   proven under real validator consensus.

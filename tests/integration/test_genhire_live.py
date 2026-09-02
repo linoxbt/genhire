@@ -11,16 +11,13 @@ from gltest.assertions import tx_execution_succeeded
 
 from conftest import (
     BRIEF,
-    EVIDENCE_URL,
     TEST_APPEAL_WINDOW,
     WAIT_INTERVAL,
     WAIT_RETRIES,
     as_account,
     deploy_genhire,
     evidence,
-    evidence_hashes,
     schedule,
-    sha256_of,
 )
 
 M1 = 6 * 10**15
@@ -100,7 +97,7 @@ def test_full_lifecycle_settles_proportionally(genhire, accounts):
 
     assert tx_execution_succeeded(
         as_freelancer.submit_milestone(
-            args=[job_id, 0, evidence(), evidence_hashes(sha256_of(EVIDENCE_URL)), "Delivered."]
+            args=[job_id, 0, evidence(), "Delivered."]
         ).transact(
             wait_retries=WAIT_RETRIES, wait_interval=WAIT_INTERVAL
         )

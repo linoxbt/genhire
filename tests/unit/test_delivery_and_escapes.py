@@ -4,8 +4,6 @@ import json
 import pytest
 
 EVIDENCE = json.dumps(["https://example.com/build"])
-# A well-formed sha256; content is only re-checked when a fetch succeeds.
-ONE_HASH = json.dumps(["a" * 64])
 
 
 # -- delivery ----------------------------------------------------------
@@ -14,14 +12,14 @@ def test_only_the_freelancer_can_deliver(h, client, UserError):
     job_id = h.engage(1000)
     h.acting_as(client, 0)
     with pytest.raises(UserError, match="Only the freelancer can submit"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, "")
 
 
 def test_milestones_are_delivered_in_order(h, freelancer, UserError):
     job_id = h.engage(600, 400)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="Milestone 0 must settle before milestone 1"):
-        h.contract.submit_milestone(job_id, 1, EVIDENCE, ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 1, EVIDENCE, "")
 
 
 def test_the_next_milestone_opens_once_the_previous_settles(h):
@@ -37,7 +35,7 @@ def test_a_milestone_cannot_be_delivered_twice(h, freelancer, UserError):
     h.submit(job_id, 0)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="not awaiting delivery"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, "")
 
 
 def test_delivery_is_blocked_after_the_deadline(h, freelancer, UserError):
@@ -45,14 +43,14 @@ def test_delivery_is_blocked_after_the_deadline(h, freelancer, UserError):
     h.warp(31 * 24 * 60 * 60)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="deadline for this job has passed"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, "")
 
 
 def test_a_nonexistent_milestone_is_rejected(h, freelancer, UserError):
     job_id = h.engage(1000)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="Milestone 5 does not exist"):
-        h.contract.submit_milestone(job_id, 5, EVIDENCE, ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 5, EVIDENCE, "")
 
 
 @pytest.mark.parametrize("bad", ["[]", '["ftp://x/y"]', '["not-a-url"]', "not json"])
@@ -60,14 +58,16 @@ def test_malformed_evidence_is_rejected(h, freelancer, UserError, bad):
     job_id = h.engage(1000)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError):
-        h.contract.submit_milestone(job_id, 0, bad, ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 0, bad, "")
 
 
 @pytest.mark.parametrize("scheme", ["https://", "http://", "ipfs://", "ar://"])
 def test_accepted_evidence_schemes(h, freelancer, scheme):
     job_id = h.engage(1000)
+    url = f"{scheme}example.com/x"
+    h.gl.nondet.web.pages[url] = "delivered"
     h.acting_as(freelancer, 0)
-    h.contract.submit_milestone(job_id, 0, json.dumps([f"{scheme}example.com/x"]), ONE_HASH, "")
+    h.contract.submit_milestone(job_id, 0, json.dumps([url]), "")
     assert h.contract.get_job(job_id)["milestones"][0]["status"] == "submitted"
 
 
@@ -242,9 +242,9 @@ def test_delivery_and_dispute_size_caps(h, client, freelancer, UserError):
 
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="notes too long"):
-        h.contract.submit_milestone(job_id, 0, EVIDENCE, ONE_HASH, "x" * (module.MAX_NOTES_CHARS + 1))
+        h.contract.submit_milestone(job_id, 0, EVIDENCE, "x" * (module.MAX_NOTES_CHARS + 1))
     with pytest.raises(UserError, match="at most 5 evidence URLs"):
-        h.contract.submit_milestone(job_id, 0, json.dumps(["https://a.com"] * 6), json.dumps(["a" * 64] * 6), "")
+        h.contract.submit_milestone(job_id, 0, json.dumps(["https://a.com"] * 6), "")
 
     h.submit(job_id, 0)
     h.adjudicate(job_id, 0, 40)

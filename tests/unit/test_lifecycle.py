@@ -4,7 +4,6 @@ import json
 import pytest
 
 EVIDENCE = json.dumps(["https://example.com/build"])
-ONE_HASH = json.dumps(["a" * 64])
 
 
 # -- posting -----------------------------------------------------------
@@ -291,7 +290,7 @@ def test_work_cannot_be_delivered_before_both_sign(h, freelancer, UserError):
     h.draft(job_id)
     h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="while the job is 'sow_drafted'"):
-        h.contract.submit_milestone(job_id, 0, json.dumps(["https://example.com/x"]), ONE_HASH, "")
+        h.contract.submit_milestone(job_id, 0, json.dumps(["https://example.com/x"]), "")
 
 
 # -- acceptance money-safety guards ------------------------------------

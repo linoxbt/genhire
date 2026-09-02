@@ -287,38 +287,29 @@ def test_the_real_adjudication_body_fetches_evidence_and_parses_the_verdict(h, c
     assert milestone["criteria_result"][0]["met"] is True
 
 
-def test_a_total_fetch_failure_aborts_rather_than_ruling_zero(h, client, UserError):
+def test_a_total_fetch_failure_aborts_the_delivery(h, freelancer, UserError):
     """A network blip must not become a settlement.
 
-    Handing the model nothing but fetch errors gets a reasonable ~0% ruling -
-    which pays the freelancer nothing and costs them a 5% bond to contest,
-    for a failure on the validator's side. An external failure has to stop the
-    adjudication, not decide it.
+    The snapshot is what every later ruling reads, so recording nothing but
+    fetch errors would get a reasonable ~0% ruling later - paying the
+    freelancer nothing and costing them a 5% bond to contest, for a failure on
+    the validator's side. An external failure has to stop the submission rather
+    than quietly become the delivery.
     """
     job_id = h.engage(1000)
-    h.submit(job_id, 0, url="https://example.com/gone")
-    # Take the page away after submission, so every render raises.
-    del h.gl.nondet.web.pages["https://example.com/gone"]
-
-    h.queue_verdict(lambda leader_fn: leader_fn())
-    h.acting_as(client, 0)
+    h.acting_as(freelancer, 0)
     with pytest.raises(UserError, match="None of the 1 evidence sources could be fetched"):
-        h.contract.adjudicate_milestone(job_id, 0)
+        h.contract.submit_milestone(job_id, 0, json.dumps(["https://example.com/gone"]), "")
 
-    # Unchanged and retryable - not ruled at zero.
+    # Nothing locked: still pending, still deliverable.
     milestone = h.contract.get_job(job_id)["milestones"][0]
-    assert milestone["status"] == "submitted"
-    assert milestone["pct"] == 0
-    assert milestone["rounds"] == 0
+    assert milestone["status"] == "pending"
+    assert milestone["evidence_snapshot"] == ""
 
 
 def test_a_partial_fetch_failure_still_proceeds(h, client, freelancer):
     """One dead link out of several is a judgment call, not an abort."""
-    import hashlib
-
-    live_content = "The cart page renders."
-    h.gl.nondet.web.pages["https://example.com/live"] = live_content
-    live_hash = hashlib.sha256(live_content.encode()).hexdigest()
+    h.gl.nondet.web.pages["https://example.com/live"] = "The cart page renders."
 
     job_id = h.engage(1000)
     h.acting_as(freelancer, 0)
@@ -326,7 +317,6 @@ def test_a_partial_fetch_failure_still_proceeds(h, client, freelancer):
         job_id,
         0,
         json.dumps(["https://example.com/live", "https://example.com/dead"]),
-        json.dumps([live_hash, "b" * 64]),
         "",
     )
 
@@ -341,49 +331,79 @@ def test_a_partial_fetch_failure_still_proceeds(h, client, freelancer):
     assert h.contract.get_job(job_id)["milestones"][0]["pct"] == 55
 
 
-def test_evidence_changed_after_submission_is_refused(h, client, UserError):
-    """The attack H-3 closes.
+def test_the_snapshot_not_the_live_page_is_what_gets_judged(h, client):
+    """The regression that H-3's first attempt got backwards.
 
-    Adjudication re-fetches on every call, including the re-adjudication that
-    answers a dispute. Without a commitment, whoever controls the page can
-    change what is judged between the ruling and its appeal - and the bond plus
-    the settlement split turn on that. The mismatch is a deterministic fact
-    about bytes, so it must be caught before the model is involved at all.
+    Committing to a sha256 and re-fetching at adjudication meant a page that
+    changed - or simply rendered differently - permanently bricked the
+    milestone, because evidence is only writable while pending. Storing the
+    text at submission instead means the page can change freely and the ruling
+    is unaffected: what was delivered is what gets judged.
     """
     job_id = h.engage(1000)
     h.submit(job_id, 0, content="The build, as delivered.")
-    h.deliver_and_rule  # noqa: B018 - documenting the normal path below
 
-    # Swap the content the freelancer committed to.
+    # Whoever controls the page swaps it after delivery.
     h.gl.nondet.web.pages[h.EVIDENCE_URL] = "Something else entirely."
 
+    h.gl.nondet.responses.append('{"completion_pct": 80, "reasoning": "Assessed", "criteria": []}')
     h.queue_verdict(lambda leader_fn: leader_fn())
     h.acting_as(client, 0)
-    with pytest.raises(UserError, match="no longer matches the content committed at submission"):
-        h.contract.adjudicate_milestone(job_id, 0)
+    h.contract.adjudicate_milestone(job_id, 0)
 
-    # No prompt was ever built - the model never saw the swapped bytes.
-    assert h.gl.nondet.prompts == []
-    assert h.contract.get_job(job_id)["milestones"][0]["status"] == "submitted"
-
-
-def test_a_mutable_url_needs_a_hash_but_a_content_addressed_one_does_not(h, freelancer, UserError):
-    job_id = h.engage(600, 400)
-    h.acting_as(freelancer, 0)
-
-    with pytest.raises(UserError, match="is mutable, so it needs a sha256"):
-        h.contract.submit_milestone(job_id, 0, json.dumps(["https://example.com/x"]), json.dumps([""]), "")
-
-    # ipfs:// is already a hash of its content, so an empty commitment is fine.
-    h.contract.submit_milestone(job_id, 0, json.dumps(["ipfs://bafyExample"]), json.dumps([""]), "")
-    evidence = h.contract.get_job(job_id)["milestones"][0]["evidence"]
-    assert evidence == [{"url": "ipfs://bafyExample", "sha256": ""}]
+    prompt = h.gl.nondet.prompts[-1]
+    assert "The build, as delivered." in prompt, "the ruling must judge the delivered bytes"
+    assert "Something else entirely." not in prompt, "the swapped page must not reach the model"
+    assert h.contract.get_job(job_id)["milestones"][0]["pct"] == 80
 
 
-def test_a_hash_is_required_for_every_url(h, freelancer, UserError):
+def test_an_appeal_judges_the_same_bytes_as_the_ruling(h, client, freelancer):
+    """H-3's actual goal, now structural rather than checked.
+
+    The appeal cannot judge different evidence because it does not fetch at
+    all - it reads the same stored snapshot the first ruling did.
+    """
     job_id = h.engage(1000)
+    h.deliver_and_rule(job_id, 0, 40)
+
+    h.gl.nondet.web.pages[h.EVIDENCE_URL] = "Rewritten to look complete."
+
+    bond = int(h.contract.get_required_bond(job_id, 0))
+    h.acting_as(freelancer, bond)
+    h.contract.dispute_ruling(job_id, 0, "The criteria were met in full.")
+
+    h.gl.nondet.responses.append('{"completion_pct": 60, "reasoning": "Reassessed", "criteria": []}')
+    h.queue_verdict(lambda leader_fn: leader_fn())
+    h.acting_as(client, 0)
+    h.contract.adjudicate_milestone(job_id, 0)
+
+    prompt = h.gl.nondet.prompts[-1]
+    assert "The delivered build." in prompt
+    assert "Rewritten to look complete." not in prompt
+
+
+def test_adjudication_never_fetches(h, client):
+    """The snapshot is authoritative, so a ruling must touch the network zero
+    times - the property the whole design turns on."""
+    job_id = h.engage(1000)
+    h.submit(job_id, 0)
+    fetches_after_delivery = h.gl.nondet.web.fetches
+    assert fetches_after_delivery > 0, "submission is what fetches"
+
+    h.gl.nondet.responses.append('{"completion_pct": 70, "reasoning": "Assessed", "criteria": []}')
+    h.queue_verdict(lambda leader_fn: leader_fn())
+    h.acting_as(client, 0)
+    h.contract.adjudicate_milestone(job_id, 0)
+
+    assert h.gl.nondet.web.fetches == fetches_after_delivery
+
+
+def test_evidence_is_stored_as_plain_urls(h, freelancer):
+    job_id = h.engage(600, 400)
+    h.gl.nondet.web.pages["ipfs://bafyExample"] = "pinned"
     h.acting_as(freelancer, 0)
-    with pytest.raises(UserError, match="one entry per URL"):
-        h.contract.submit_milestone(
-            job_id, 0, json.dumps(["https://a.com", "https://b.com"]), json.dumps(["a" * 64]), ""
-        )
+    h.contract.submit_milestone(job_id, 0, json.dumps(["ipfs://bafyExample"]), "")
+
+    milestone = h.contract.get_job(job_id)["milestones"][0]
+    assert milestone["evidence"] == ["ipfs://bafyExample"]
+    assert milestone["evidence_snapshot"] == "--- SOURCE: ipfs://bafyExample ---\npinned\n\n"

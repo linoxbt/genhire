@@ -7,7 +7,6 @@ import { useTx } from '../lib/useTx'
 import { retryRead } from '../lib/tx'
 import { NETWORKS, useNetwork } from '../lib/network'
 import { useNow } from '../lib/useNow'
-import { commitEvidence } from '../lib/evidence'
 import { formatGen, formatDate, relativeTime, sameAddress, toWei } from '../lib/format'
 import type { Job, Proposal, Ruling, StatementOfWork } from '../lib/types'
 import { ZERO_ADDRESS } from '../lib/types'
@@ -258,23 +257,18 @@ export default function JobDocument() {
             maxRounds={maxRounds}
             busy={busy}
             actions={{
-              // The content commitment is computed inside `send`, so a fetch
-              // failure surfaces through the same notice as everything else.
+              // Validators read the evidence during this transaction and store
+              // what they find, so delivery takes a consensus round rather than
+              // being a plain state write.
               onSubmit: (index, urls, notes) =>
-                act(async (c) => {
-                  const { hashes, unreachable } = await commitEvidence(urls)
-                  if (unreachable.length > 0) {
-                    throw new Error(
-                      `Could not read ${unreachable.join(', ')} from this browser to commit its ` +
-                        `content. Publish it somewhere fetchable, or use an ipfs:// reference.`,
-                    )
-                  }
-                  return api.submitMilestone(c, job.id, index, urls, hashes, notes)
-                }, 'Hashing the evidence and recording the delivery…'),
+                act(
+                  (c) => api.submitMilestone(c, job.id, index, urls, notes),
+                  'Validators are reading the evidence and recording the delivery. This takes a few minutes.',
+                ),
               onAdjudicate: (index) =>
                 act(
                   (c) => api.adjudicateMilestone(c, job.id, index),
-                  'Validators are fetching the evidence and judging it against the criteria. This takes a few minutes.',
+                  'Validators are judging the recorded evidence against the criteria. This takes a few minutes.',
                 ),
               // The bond read happens inside `send` so a failure there is
               // reported like any other, rather than becoming an unhandled

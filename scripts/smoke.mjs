@@ -211,6 +211,8 @@ async function main() {
     JSON.stringify([process.env.GENHIRE_EVIDENCE_URL ?? "https://example.com"]),
     "Cart and payment step are live at the linked URL.",
   ]);
+  // The contract fetched and stored the evidence during that transaction; every
+  // later ruling and appeal reads this snapshot rather than the live page.
   console.log();
 
   console.log("6. validators adjudicate it (validator consensus)");

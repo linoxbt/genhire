@@ -1,6 +1,5 @@
 """Fixtures for the in-process suite. See glstub.py for what this proves."""
 import datetime
-import hashlib
 import importlib.util
 import json
 import pathlib
@@ -130,18 +129,16 @@ class Harness:
         content="The delivered build.",
         url=EVIDENCE_URL,
     ) -> None:
-        """Deliver a milestone, committing to the evidence content.
+        """Deliver a milestone.
 
-        Registers the page with the stub's fetcher and submits the sha256 of
-        exactly those bytes, so the commitment the contract checks at
-        adjudication is the one a real freelancer would have made.
+        Registers the page with the stub's fetcher, then submits. The contract
+        fetches it during the transaction and stores the text, so what a later
+        adjudication reads comes from contract state - the helper never tells
+        the contract what the content is.
         """
         self.gl.nondet.web.pages[url] = content
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         self.acting_as(freelancer, 0)
-        self.contract.submit_milestone(
-            job_id, index, json.dumps([url]), json.dumps([digest]), notes
-        )
+        self.contract.submit_milestone(job_id, index, json.dumps([url]), notes)
 
     def adjudicate(self, job_id, index, pct, reasoning="Assessed against the criteria") -> None:
         self.queue_verdict({"completion_pct": pct, "reasoning": reasoning, "criteria": []})

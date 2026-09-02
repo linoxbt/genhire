@@ -93,9 +93,9 @@ DISPUTE_BOND_BPS = 500  # 5% of the disputed milestone's amount
 # engagement will reach it.
 MAX_SCOPE_RULINGS = 10
 
-# ipfs:// and ar:// references are themselves hashes of the content, so
-# re-fetching one is guaranteed to return the same bytes. Everything else is
-# mutable and must be committed to with a sha256 at submission.
+# ipfs:// and ar:// references are themselves hashes of the content. They are
+# accepted alongside http(s), and like every other source they are fetched once
+# at submission and judged from that snapshot.
 IMMUTABLE_SCHEMES = ("ipfs://", "ar://")
 
 # Rulings are quantised to this step before anything is stored or paid.
@@ -340,6 +340,7 @@ def _parse_milestones(raw: str, what: str) -> list:
                 "dispute_reason": "",
                 "criteria_result": [],
                 "evidence": [],
+                "evidence_snapshot": "",
                 "notes": "",
                 "submitted_at": 0,
                 "ruled_at": 0,
@@ -357,15 +358,15 @@ def _milestones_total(milestones: list) -> int:
     return total
 
 
-def _parse_evidence(raw: str, hashes_raw: str) -> list:
-    """Validate the evidence and its content commitment.
+def _parse_evidence(raw: str) -> list:
+    """Validate the evidence URLs.
 
-    Locking a URL only pins *where* the evidence lives, not what is there.
-    `adjudicate_milestone` re-fetches on every call - including the
-    re-adjudication that answers a dispute - so without a commitment a party who
-    controls the page can change what is judged between the ruling and its
-    appeal, and the bond plus the settlement split turn on that. A sha256 taken
-    at submission makes the appeal judge the same bytes, or fail loudly.
+    A URL only says *where* the evidence lives, never what is there, so the URL
+    alone cannot be what an adjudication judges. `submit_milestone` resolves
+    that by fetching each of these once, inside consensus, and storing the text
+    on the milestone - see its docstring. What is judged, on the first ruling
+    and on every appeal, is that stored snapshot, so nothing here has to commit
+    to content.
     """
     if not raw or not raw.strip():
         raise gl.vm.UserError(f"{ERROR_EXPECTED} evidence_urls_json must not be empty")
@@ -378,9 +379,7 @@ def _parse_evidence(raw: str, hashes_raw: str) -> list:
     if len(data) > MAX_EVIDENCE_URLS:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} at most {MAX_EVIDENCE_URLS} evidence URLs")
 
-    # URLs first: a malformed address is the more useful complaint, and there is
-    # no point discussing hashes for evidence that cannot be accepted at all.
-    urls: list = []
+    out: list = []
     for entry in data:
         url = str(entry).strip()
         if not (
@@ -392,32 +391,7 @@ def _parse_evidence(raw: str, hashes_raw: str) -> list:
             raise gl.vm.UserError(
                 f"{ERROR_EXPECTED} Evidence URL '{_clip(url, 120)}' must start with http://, https://, ipfs:// or ar://"
             )
-        urls.append(url)
-
-    try:
-        hashes = json.loads(hashes_raw) if hashes_raw and hashes_raw.strip() else []
-    except Exception as e:
-        raise gl.vm.UserError(f"{ERROR_EXPECTED} evidence_hashes_json is not valid JSON: {e}")
-    if not isinstance(hashes, list):
-        raise gl.vm.UserError(f"{ERROR_EXPECTED} evidence_hashes_json must be a JSON array")
-    if len(hashes) != len(urls):
-        raise gl.vm.UserError(
-            f"{ERROR_EXPECTED} evidence_hashes_json must have one entry per URL "
-            f"({len(urls)} URLs, {len(hashes)} hashes)"
-        )
-
-    out: list = []
-    for index, url in enumerate(urls):
-        digest = str(hashes[index]).strip().lower()
-        content_addressed = url.startswith(IMMUTABLE_SCHEMES)
-        if content_addressed:
-            digest = ""
-        elif not re.fullmatch(r"[0-9a-f]{64}", digest):
-            raise gl.vm.UserError(
-                f"{ERROR_EXPECTED} '{_clip(url, 80)}' is mutable, so it needs a sha256 of its "
-                f"content (64 hex characters). ipfs:// and ar:// references may omit it."
-            )
-        out.append({"url": url, "sha256": digest})
+        out.append(url)
     return out
 
 
@@ -531,56 +505,40 @@ def _split(amount: int, pct: int) -> tuple[int, int]:
 
 
 def _fetch_evidence(urls: list) -> str:
-    """Fetch the submitted evidence live, budgeted so one huge page cannot
-    crowd out the rest of the sources.
+    """Fetch the submitted evidence, budgeted so one huge page cannot crowd out
+    the rest of the sources.
 
-    If *every* source fails to fetch, this raises rather than handing the model
-    a page of error strings. A model shown nothing but fetch errors will
-    reasonably rule ~0%, which turns a validator-side network blip into a real
-    0% settlement that costs the freelancer a 5% bond to contest. An external
-    failure should stop the adjudication, not decide it.
+    Called once, from `submit_milestone`, inside consensus. The text it returns
+    is stored on the milestone and is what every later adjudication reads, so a
+    page that changes afterwards cannot alter a ruling or its appeal.
+
+    If *every* source fails to fetch, this raises rather than recording a page
+    of error strings as the delivery. A snapshot of nothing but fetch errors
+    would later be judged ~0%, turning a network blip at submission time into a
+    real 0% settlement that costs the freelancer a 5% bond to contest. An
+    external failure should stop the submission, not silently become it.
     """
     text = ""
     remaining = MAX_TOTAL_EVIDENCE_CHARS
     reached = 0
-    tampered: list = []
     for item in urls:
         if remaining <= 0:
             break
-        url = str(item["url"])
-        expected = str(item.get("sha256", ""))
+        url = str(item)
         try:
             fetched = gl.nondet.web.render(url, mode="text")
             reached += 1
         except Exception as e:
             fetched = f"[failed to fetch: {e}]"
-            chunk = str(fetched)[:MAX_CHARS_PER_URL][:remaining]
-            remaining -= len(chunk)
-            text += f"--- SOURCE: {url} ---\n{chunk}\n\n"
-            continue
-        fetched_str = str(fetched)
-        # Checked before any truncation and before the model is involved: this
-        # is a deterministic fact about the bytes, not a judgment call. An empty
-        # expectation means a content-addressed URL, already immutable.
-        if expected:
-            actual = hashlib.sha256(fetched_str.encode("utf-8")).hexdigest()
-            if actual != expected:
-                tampered.append(url)
-        chunk = fetched_str[:MAX_CHARS_PER_URL][:remaining]
+        chunk = str(fetched)[:MAX_CHARS_PER_URL][:remaining]
         remaining -= len(chunk)
         text += f"--- SOURCE: {url} ---\n{chunk}\n\n"
 
-    if tampered:
-        raise gl.vm.UserError(
-            f"{ERROR_EXPECTED} Evidence no longer matches the content committed at submission: "
-            + ", ".join(tampered)
-            + ". Adjudication cannot proceed on evidence that changed after it was submitted."
-        )
     if urls and reached == 0:
         raise gl.vm.UserError(
             f"{ERROR_EXTERNAL} None of the {len(urls)} evidence sources could be fetched. "
             f"This is a fetch failure, not a judgment - the milestone is unchanged and "
-            f"adjudication can be retried."
+            f"the delivery can be retried."
         )
     return text
 
@@ -1001,14 +959,21 @@ class GenHire(gl.Contract):
         job_id: int,
         milestone_idx: int,
         evidence_urls_json: str,
-        evidence_hashes_json: str,
         notes: str,
     ) -> None:
         """Deliver a milestone. Milestones are delivered in order.
 
-        `evidence_hashes_json` is one sha256 per URL, committing to the content
-        as it stands now - see _parse_evidence for why a URL alone is not
-        enough. Content-addressed references may pass an empty string.
+        The evidence is fetched here, once, and the text is stored on the
+        milestone. Adjudication reads that snapshot rather than re-fetching, so
+        the first ruling and every appeal judge byte-identical evidence and a
+        party who controls the page cannot change what is being judged after
+        the fact. It also means the freelancer is paid for what they delivered,
+        not for whatever the page happens to say weeks later.
+
+        The fetch is the transaction's one non-deterministic block, so an
+        unstable page fails here - loudly, with nothing locked and the milestone
+        still pending - instead of stranding a funded milestone that can never
+        be adjudicated.
         """
         job = self._get(u256(job_id))
         self._require_status(job, (Status.ACTIVE,), "submit a milestone")
@@ -1031,7 +996,13 @@ class GenHire(gl.Contract):
         if len(notes) > MAX_NOTES_CHARS:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} notes too long (max {MAX_NOTES_CHARS} characters)")
 
-        milestone["evidence"] = _parse_evidence(evidence_urls_json, evidence_hashes_json)
+        evidence = _parse_evidence(evidence_urls_json)
+
+        def _snapshot() -> str:
+            return _fetch_evidence(evidence)
+
+        milestone["evidence"] = evidence
+        milestone["evidence_snapshot"] = gl.eq_principle.strict_eq(_snapshot)
         milestone["notes"] = notes.strip()
         milestone["status"] = MilestoneStatus.SUBMITTED
         milestone["submitted_at"] = int(self._now())
@@ -1063,7 +1034,9 @@ class GenHire(gl.Contract):
         title = str(milestone["title"])
         criteria = [str(item) for item in milestone["criteria"]]
         notes = str(milestone["notes"])
-        urls = [dict(item) for item in milestone["evidence"]]
+        # The snapshot taken at submission, not a fresh fetch: the appeal has to
+        # judge the same bytes the first ruling did.
+        evidence_text = str(milestone.get("evidence_snapshot", ""))
         scope = json.loads(job.sow_text)["scope"]
         criteria_block = "\n".join(f"{index + 1}. {text}" for index, text in enumerate(criteria))
         dispute_context = ""
@@ -1078,7 +1051,6 @@ class GenHire(gl.Contract):
             )
 
         def _judge() -> dict:
-            evidence_text = _fetch_evidence(urls)
             prompt = f"""You are adjudicating how completely a delivered milestone satisfies the
 acceptance criteria that were agreed and signed before the work began.
 

@@ -207,12 +207,25 @@ rate-limit errors specifically — never on genuine failures, which should surfa
 
 ## 9. Two decisions taken after the first audit
 
-**Evidence is committed, not merely located.** Locking a URL pins where the evidence lives, not what
-is there, and `adjudicate_milestone` re-fetches on every call — including the re-adjudication that
-answers a dispute. Whoever controlled the page could therefore change what was judged between a
-ruling and its appeal, with the bond and the settlement split turning on it. `submit_milestone` now
-takes a sha256 per mutable URL; `_fetch_evidence` re-hashes what it fetched and raises before the
-model sees anything on mismatch. `ipfs://` and `ar://` are exempt: the reference is the hash.
+**Evidence is snapshotted, not merely located.** A URL pins where the evidence lives, not what is
+there. If adjudication re-fetched on every call — including the re-adjudication that answers a
+dispute — whoever controlled the page could change what was judged between a ruling and its appeal,
+with the bond and the settlement split turning on it.
+
+The first attempt at this had the freelancer commit a sha256 per URL, re-checked at adjudication.
+That was wrong in a way worth recording: the client hashed the raw HTTP body while the contract
+hashed `gl.nondet.web.render(url, mode="text")` — GenVM's *rendered text extraction* of the page.
+No browser `fetch` can reproduce that, so every real delivery committed a hash that could never
+match, and adjudication reverted permanently. Because evidence is only writable while a milestone is
+`pending`, there was no way back: the escrow was stranded. It also required the browser to fetch the
+evidence, which CORS blocks for most third-party URLs.
+
+`submit_milestone` now fetches the evidence once, inside `gl.eq_principle.strict_eq`, and stores the
+text on the milestone. `adjudicate_milestone` reads that snapshot and never touches the network.
+The appeal cannot judge different bytes because there is only one copy of the bytes, which is the
+original guarantee obtained structurally rather than by comparison. The failure mode also moves to
+the right place: an unstable page now fails at submission, loudly, with the milestone still pending
+and nothing locked.
 
 **Rulings are quantised to 5% steps.** An equivalence principle must tolerate some spread between
 validators — they will not independently produce the same percentage to the point. But settlement

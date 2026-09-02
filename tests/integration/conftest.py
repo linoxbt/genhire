@@ -59,25 +59,6 @@ def evidence(*urls) -> str:
     return json.dumps(list(urls) or [EVIDENCE_URL])
 
 
-def evidence_hashes(*hashes) -> str:
-    """One sha256 per URL. Content-addressed references pass an empty string.
-
-    The fixture page is fetched by validators, not by us, so the digest has to
-    be of exactly what `gl.nondet.web.render` returns - which is why this suite
-    hashes the live page at test time rather than pinning a constant.
-    """
-    return json.dumps(list(hashes))
-
-
-def sha256_of(url: str) -> str:
-    """The sha256 of a page's text, as the contract will compute it."""
-    import hashlib
-    import urllib.request
-
-    with urllib.request.urlopen(url, timeout=30) as response:
-        return hashlib.sha256(response.read().decode("utf-8", "replace").encode("utf-8")).hexdigest()
-
-
 @pytest.fixture
 def genhire():
     return deploy_genhire()

@@ -115,27 +115,20 @@ export const signSow = (ctx: WriteContext, jobId: number, sowHash: string) =>
   write(ctx, 'sign_sow', [jobId, sowHash])
 
 /**
- * Deliver a milestone, committing to the evidence content.
+ * Deliver a milestone.
  *
- * `hashes` is one sha256 per URL, in the same order. Content-addressed
- * references (`ipfs://`, `ar://`) pass an empty string, because the reference
- * already is a hash of the bytes.
+ * The contract fetches each URL once during this transaction and stores the
+ * text, so adjudication and any later appeal judge that snapshot rather than a
+ * fresh fetch. Nothing needs to be hashed here, and the browser never has to
+ * read the evidence itself.
  */
 export const submitMilestone = (
   ctx: WriteContext,
   jobId: number,
   milestoneIdx: number,
   evidenceUrls: string[],
-  hashes: string[],
   notes: string,
-) =>
-  write(ctx, 'submit_milestone', [
-    jobId,
-    milestoneIdx,
-    JSON.stringify(evidenceUrls),
-    JSON.stringify(hashes),
-    notes,
-  ])
+) => write(ctx, 'submit_milestone', [jobId, milestoneIdx, JSON.stringify(evidenceUrls), notes])
 
 export const adjudicateMilestone = (ctx: WriteContext, jobId: number, milestoneIdx: number) =>
   write(ctx, 'adjudicate_milestone', [jobId, milestoneIdx])
