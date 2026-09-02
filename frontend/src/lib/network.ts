@@ -1,9 +1,14 @@
 import { useSyncExternalStore } from 'react'
-import { studionet, testnetAsimov } from 'genlayer-js/chains'
+import { studionet } from 'genlayer-js/chains'
 
 /**
- * The networks GenHire targets. Localnet is deliberately absent: the app only
- * ever offers a wallet a real GenLayer network.
+ * The networks GenHire targets.
+ *
+ * Studio only. Localnet is deliberately absent - the app never offers a wallet a
+ * local dev chain.
+ *
+ * The registry is still a map, and everything below still selects by key, so
+ * adding a network back is a one-entry change rather than a rewrite.
  */
 export const NETWORKS = {
   studionet: {
@@ -16,14 +21,6 @@ export const NETWORKS = {
     sandbox: true,
     explorer: 'https://studio.genlayer.com',
     contractAddress: import.meta.env.VITE_CONTRACT_ADDRESS_STUDIONET as `0x${string}`,
-  },
-  testnetAsimov: {
-    chain: testnetAsimov,
-    label: 'Asimov Testnet',
-    short: 'Asimov',
-    sandbox: false,
-    explorer: 'https://explorer-asimov.genlayer.com',
-    contractAddress: import.meta.env.VITE_CONTRACT_ADDRESS_ASIMOV as `0x${string}`,
   },
 } as const
 

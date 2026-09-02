@@ -468,7 +468,6 @@ Key modules in `frontend/src/lib/`:
 | `genhire.ts` | Every contract read and write, one function each |
 | `tx.ts` | Transaction lifecycle — waits for real finality, distinguishes revert from no-verdict |
 | `useTx.ts` | The hook every action page uses: sign → wait → report |
-| `network.ts` | Studio ⇄ Asimov runtime switch via `useSyncExternalStore` |
 | `retry.ts` | Rate-limit-only backoff, plus paced fan-out reads |
 | `format.ts` | `formatGen`, `toWei` (never float maths on money), relative times, the redline diff |
 | `appkit.tsx` / `wallet.ts` | Reown AppKit + wagmi, with the CAIP fields both GenLayer chains need |
@@ -533,22 +532,17 @@ with `genlayer code <address>` before trusting it.
 
 | Network | Chain | Address | Appeal window |
 |---|---|---|---|
-| Studio Network | 61999 | `0xa0074bb806b5bA67684c272d342339A56Bf57713` | 300s — sandbox; the app points here |
-| Testnet Asimov | 4221 | **not deployable at this size** — see below | — |
+| Studio Network | 61999 | `0xa0074bb806b5bA67684c272d342339A56Bf57713` | 300s |
 
-**Asimov cannot host this contract at its current size.** A deploy is rejected with
-`BlockPubdataLimitReached`. Binary-searching with padded dummy contracts puts the ceiling between
-52,000 and 55,000 bytes; `contracts/genhire.py` is ~73 kB, and ~55 kB even with every comment and
-docstring stripped — so it is over the limit either way, and closing the gap would mean cutting real
-code rather than prose. Studio has no such limit (it is gasless, and `BlockPubdataLimitReached` is a
-zkSync-era rollup constraint), and accepts the full source unmodified.
+GenHire targets **Studio only**: gasless, with a built-in faucet (the 💧 button at
+[studio.genlayer.com](https://studio.genlayer.com)), and it takes the contract source unmodified — so
+`genlayer code` byte-verification against this repository holds.
 
-Two related traps if you deploy a large contract yourself: `deployContract` in `genlayer-js`
-**silently drops a `gas` option**, and when `estimateTransactionGas` fails it falls back to a flat
-200,000 gas — well below the ~1.17M a 73 kB contract needs in intrinsic calldata cost alone. The
-resulting error says "intrinsic gas too low", which points away from the real cause. Studio is
-gasless and has a built-in faucet (the 💧 button at [studio.genlayer.com](https://studio.genlayer.com));
-Asimov funds come from [testnet-faucet.genlayer.foundation](https://testnet-faucet.genlayer.foundation).
+One trap worth knowing if you deploy a large contract on any GenLayer chain: `deployContract` in
+`genlayer-js` **silently drops a `gas` option**, and when `estimateTransactionGas` fails it falls
+back to a flat 200,000 gas — well below the ~1.17M a 73 kB contract needs in intrinsic calldata cost
+alone. The resulting error reads "intrinsic gas too low", which points at gas when the real cause is
+usually size.
 
 ---
 
@@ -565,7 +559,6 @@ npm run dev
 
 ```bash
 VITE_CONTRACT_ADDRESS_STUDIONET="0x65BE4DE0A604AB9b298BAb2e8715b21b843406f0"
-VITE_CONTRACT_ADDRESS_ASIMOV=""
 VITE_REOWN_PROJECT_ID=""      # free from https://cloud.reown.com
 ```
 
@@ -685,10 +678,11 @@ reporting success.
   re-run `scripts/smoke.mjs` once the quota resets.
 - `tests/integration/` is written but unrun — it needs a raw private key in a gitignored config.
 
-**Not started**
+**Deployed**
 
-- Testnet Asimov deployment (needs a funded deployer). The frontend **is** deployed — see the live
-  link at the top.
+- Contract live on Studio at `0xa0074bb806b5bA67684c272d342339A56Bf57713`, verified by reading a view
+  that only exists in the post-audit code.
+- Frontend live at [genhire.netlify.app](https://genhire.netlify.app), pointed at that contract.
 
 ---
 

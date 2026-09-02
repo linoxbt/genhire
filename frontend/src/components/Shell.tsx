@@ -7,15 +7,38 @@ import { Lockup } from './Logo'
 import NavMenu from './NavMenu'
 import Footer from './Footer'
 
+/**
+ * The network indicator.
+ *
+ * With a single supported network there is nothing to switch between, so this
+ * states which chain the app is reading rather than offering a one-option
+ * toggle. It becomes a real switcher again on its own if another network is
+ * ever added back to the registry.
+ */
 function NetworkSwitcher({ dark }: { dark: boolean }) {
   const network = useNetwork()
+  const keys = Object.keys(NETWORKS) as NetworkKey[]
+
+  if (keys.length < 2) {
+    return (
+      <span
+        title={isDeployed(network) ? NETWORKS[network].label : `${NETWORKS[network].label} — not deployed yet`}
+        className={`hidden rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] tracking-wider uppercase sm:inline-block ${
+          dark ? 'border-paper/25 text-paper/60' : 'border-rule text-ink-faint'
+        }`}
+      >
+        {NETWORKS[network].short}
+      </span>
+    )
+  }
+
   return (
     <div
       className={`hidden items-center rounded-full border p-0.5 sm:flex ${
         dark ? 'border-paper/25' : 'border-rule'
       }`}
     >
-      {(Object.keys(NETWORKS) as NetworkKey[]).map((key) => {
+      {keys.map((key) => {
         const active = network === key
         return (
           <button

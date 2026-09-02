@@ -24,10 +24,10 @@ function toCaipNetwork(chain: (typeof NETWORKS)[keyof typeof NETWORKS]['chain'],
   })
 }
 
-const networks = [
-  toCaipNetwork(NETWORKS.studionet.chain, NETWORKS.studionet.label),
-  toCaipNetwork(NETWORKS.testnetAsimov.chain, NETWORKS.testnetAsimov.label),
-] as [ReturnType<typeof toCaipNetwork>, ...ReturnType<typeof toCaipNetwork>[]]
+// Derived from the registry rather than listed again, so the two cannot drift.
+const networks = (Object.values(NETWORKS) as { chain: Parameters<typeof toCaipNetwork>[0]; label: string }[]).map(
+  (entry) => toCaipNetwork(entry.chain, entry.label),
+) as [ReturnType<typeof toCaipNetwork>, ...ReturnType<typeof toCaipNetwork>[]]
 
 export const walletEnabled = Boolean(projectId)
 
